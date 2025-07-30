@@ -1,18 +1,3 @@
-//! # [Ratatui] Table example
-//!
-//! The latest version of this example is available in the [examples] folder in the repository.
-//!
-//! Please note that the examples are designed to be run against the `main` branch of the Github
-//! repository. This means that you may not be able to compile with the latest release version on
-//! crates.io, or the one that you have installed locally.
-//!
-//! See the [examples readme] for more information on finding examples that match the version of the
-//! library you are using.
-//!
-//! [Ratatui]: https://github.com/ratatui/ratatui
-//! [examples]: https://github.com/ratatui/ratatui/blob/main/examples
-//! [examples readme]: https://github.com/ratatui/ratatui/blob/main/examples/README.md
-
 use color_eyre::Result;
 use crossterm::event::KeyModifiers;
 use itertools::Itertools;
@@ -50,6 +35,7 @@ fn main() -> Result<()> {
     ratatui::restore();
     app_result
 }
+
 struct TableColors {
     block_border: Color,
     buffer_bg: Color,
@@ -249,11 +235,6 @@ impl App {
         self.render_table(table_block, frame, rects[0]);
         self.render_scrollbar(frame, rects[0]);
         self.render_footer(frame, rects[1]);
-    }
-
-    fn placeholder_paragraph(&mut self) -> Paragraph<'static> {
-        let text = "aliqua.";
-        Paragraph::new(text.dark_gray()).wrap(Wrap { trim: true })
     }
 
     fn render_table(&mut self, sb: Block, frame: &mut Frame, area: Rect) {
