@@ -129,6 +129,11 @@ impl App {
 
         let mut vgs = Vec::<Vg>::new();
         let vg1 = Vg {
+            name: String::from("vg00"),
+            id: String::from("12312321321321"),
+        };
+        vgs.push(vg1);
+        let vg1 = Vg {
             name: String::from("vg01"),
             id: String::from("12312321321321"),
         };
