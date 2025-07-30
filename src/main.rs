@@ -1,3 +1,7 @@
+//
+// Test out Rust and ratatui.
+//
+
 use color_eyre::Result;
 use crossterm::event::KeyModifiers;
 use itertools::Itertools;
