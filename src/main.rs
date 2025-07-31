@@ -6,15 +6,15 @@ use color_eyre::Result;
 use crossterm::event::KeyModifiers;
 use itertools::Itertools;
 use ratatui::{
+    DefaultTerminal, Frame,
     crossterm::event::{self, Event, KeyCode, KeyEventKind},
     layout::{Constraint, Layout, Margin, Rect},
     style::{self, Color, Modifier, Style, Stylize},
     text::Text,
     widgets::{
-        Block, Borders, BorderType, Cell, HighlightSpacing, Paragraph, Row, Scrollbar, ScrollbarOrientation,
-        ScrollbarState, Table, TableState, Wrap,
+        Block, BorderType, Borders, Cell, HighlightSpacing, Paragraph, Row, Scrollbar,
+        ScrollbarOrientation, ScrollbarState, Table, TableState, Wrap,
     },
-    DefaultTerminal, Frame,
 };
 use style::palette::tailwind;
 use unicode_width::UnicodeWidthStr;
@@ -72,85 +72,80 @@ impl TableColors {
     }
 }
 
-struct Vg {
-    name: String,
-    id: String,
-}
-impl Vg {
-    const fn ref_array(&self) -> [&String; 2] {
-        [&self.name, &self.id]
-    }
-
-    fn name(&self) -> &str {
-        &self.name
-    }
-
-    fn id(&self) -> &str {
-        &self.id
-    }
-}
- 
-// TODO remove use vg pv etc
-struct Data {
-    name: String,
-    address: String,
-    email: String,
+struct VgTableData {
+    vg_name: String,
+    pv_name: String,
+    lv_name: String,
 }
 
-impl Data {
+impl VgTableData {
     const fn ref_array(&self) -> [&String; 3] {
-        [&self.name, &self.address, &self.email]
+        [&self.vg_name, &self.pv_name, &self.lv_name]
     }
 
-    fn name(&self) -> &str {
-        &self.name
+    fn vg_name(&self) -> &str {
+        &self.vg_name
     }
 
-    fn address(&self) -> &str {
-        &self.address
+    fn pv_name(&self) -> &str {
+        &self.pv_name
     }
 
-    fn email(&self) -> &str {
-        &self.email
+    fn lv_name(&self) -> &str {
+        &self.lv_name
     }
 }
 
 struct App {
     state: TableState,
-    items: Vec<Vg>,
-    longest_item_lens: (u16, u16), // order is (name, id)
+    items: Vec<VgTableData>,
+    vgd_longest_item_lens: (u16, u16, u16), // order is (vg_name, pv_name_ lv_name)
     scroll_state: ScrollbarState,
     colors: TableColors,
-    color_index: usize,
+    color_index: usize,    
 }
 
 impl App {
     fn new() -> Self {
-
-        let mut vgs = Vec::<Vg>::new();
-        let vg1 = Vg {
-            name: String::from("vg00"),
-            id: String::from("12312321321321"),
+        let mut vgs = Vec::<VgTableData>::new();
+        let vg1 = VgTableData {
+            vg_name: String::from("vg04_1tbdisks"),
+            pv_name: String::from("/dev/sdc1"),
+            lv_name: String::from("lvswap"),
         };
         vgs.push(vg1);
-        let vg1 = Vg {
-            name: String::from("vg01"),
-            id: String::from("12312321321321"),
+        let vg1 = VgTableData {
+            vg_name: String::from("vg04_1tbdisks"),
+            pv_name: String::from("/dev/sdc1"),
+            lv_name: String::from("lvvirt_db01_data"),
         };
         vgs.push(vg1);
-        let vg1 = Vg {
-            name: String::from("vg02"),
-            id: String::from("12312321321321"),
+        let vg1 = VgTableData {
+            vg_name: String::from("vg04_1tbdisks"),
+            pv_name: String::from("/dev/sdc1"),
+            lv_name: String::from("[lvvirt_batman_rmeta_1]"),
+        };
+        vgs.push(vg1);
+        let vg1 = VgTableData {
+            vg_name: String::from("vgdata01"),
+            pv_name: String::from("/dev/sda1"),
+            lv_name: String::from("[lvdata_mpriv_rmeta_2]"),
+        };
+        vgs.push(vg1);
+        let vg1 = VgTableData {
+            vg_name: String::from("vgdata01"),
+            pv_name: String::from("/dev/sdg1"),
+            lv_name: String::from("[lvdata_mpriv_rimage_3]"),
         };
         vgs.push(vg1);
 
         Self {
             state: TableState::default().with_selected(0),
-            longest_item_lens: constraint_len_calculator(&vgs),
+            vgd_longest_item_lens: constraint_len_calculator(&vgs),
             scroll_state: ScrollbarState::new((vgs.len() - 1) * ITEM_HEIGHT),
             colors: TableColors::new(&PALETTES[0]),
             color_index: 0,
-            items: vgs,
+            items: vgs,           
         }
     }
     pub fn next_row(&mut self) {
@@ -204,6 +199,30 @@ impl App {
         self.colors = TableColors::new(&PALETTES[self.color_index]);
     }
 
+    pub fn acton_cell(&mut self) {
+        let i = match self.state.selected() {
+            Some(i) => i,
+            None => 0,
+        };
+        let ic: (usize, usize) = match self.state.selected_cell() {
+            Some(ic) => ic,
+            None => (0, 0),
+        };
+        
+        //println!("Selected row: {i}");
+        //println!("Selected cell: {},{}", ic.0, ic.1);        
+                        
+        let item: &VgTableData = self.items.get(ic.0).expect("Unexpected error");
+        let cell_value: String = match ic.1 {
+            0 => item.vg_name.clone(),
+            1 => item.pv_name.clone(),
+            2 => item.lv_name.clone(),
+            _ => "".to_string(),
+        };
+            
+        println!("selected value: {cell_value}");        
+    }
+
     fn run(mut self, mut terminal: DefaultTerminal) -> Result<()> {
         loop {
             terminal.draw(|frame| self.draw(frame))?;
@@ -212,6 +231,7 @@ impl App {
                 if key.kind == KeyEventKind::Press {
                     let shift_pressed = key.modifiers.contains(KeyModifiers::SHIFT);
                     match key.code {
+                        KeyCode::Enter => self.acton_cell(),
                         KeyCode::Char('q') | KeyCode::Esc => return Ok(()),
                         KeyCode::Char('j') | KeyCode::Down => self.next_row(),
                         KeyCode::Char('k') | KeyCode::Up => self.previous_row(),
@@ -229,16 +249,13 @@ impl App {
     }
 
     fn draw(&mut self, frame: &mut Frame) {
-
         let vertical = &Layout::vertical([Constraint::Min(5), Constraint::Length(4)]);
         let rects = vertical.split(frame.area());
 
         self.set_colors();
-        
+
         let table_block = Block::default()
-            .border_style(
-                Style::new()
-                    .fg(self.colors.block_border))
+            .border_style(Style::new().fg(self.colors.block_border))
             .borders(Borders::ALL);
 
         self.render_table(table_block, frame, rects[0]);
@@ -258,7 +275,7 @@ impl App {
             .add_modifier(Modifier::REVERSED)
             .fg(self.colors.selected_cell_style_fg);
 
-        let header = ["VG", "ID"]
+        let header = ["vg_name", "pv_name", "lv_name"]
             .into_iter()
             .map(Cell::from)
             .collect::<Row>()
@@ -281,8 +298,9 @@ impl App {
             rows,
             [
                 // + 1 is for padding.
-                Constraint::Length(self.longest_item_lens.0 + 1),
-                Constraint::Min(self.longest_item_lens.1 + 1),
+                Constraint::Length(self.vgd_longest_item_lens.0 + 1),
+                Constraint::Min(self.vgd_longest_item_lens.1),
+                Constraint::Min(self.vgd_longest_item_lens.2),
             ],
         )
         .header(header)
@@ -298,6 +316,7 @@ impl App {
         .bg(self.colors.buffer_bg)
         .block(sb)
         .highlight_spacing(HighlightSpacing::Always);
+        
         frame.render_stateful_widget(t, area, &mut self.state);
     }
 
@@ -332,47 +351,28 @@ impl App {
     }
 }
 
-fn generate_fake_names() -> Vec<Data> {
-    use fakeit::{address, contact, name};
-
-    (0..20)
-        .map(|_| {
-            let name = name::full();
-            let address = format!(
-                "{}\n{}, {} {}",
-                address::street(),
-                address::city(),
-                address::state(),
-                address::zip()
-            );
-            let email = contact::email();
-
-            Data {
-                name,
-                address,
-                email,
-            }
-        })
-        .sorted_by(|a, b| a.name.cmp(&b.name))
-        .collect()
-}
-
-fn constraint_len_calculator(items: &[Vg]) -> (u16, u16) {
-    let name_len = items
+fn constraint_len_calculator(items: &[VgTableData]) -> (u16, u16, u16) {
+    let vgname_len = items
         .iter()
-        .map(Vg::name)
+        .map(VgTableData::vg_name)
         .map(UnicodeWidthStr::width)
         .max()
         .unwrap_or(0);
-    let id_len = items
+    let pvname_len = items
         .iter()
-        .map(Vg::id)
+        .map(VgTableData::pv_name)
+        .flat_map(str::lines)
+        .map(UnicodeWidthStr::width)
+        .max()
+        .unwrap_or(0);
+    let lvname_len = items
+        .iter()
+        .map(VgTableData::pv_name)
         .flat_map(str::lines)
         .map(UnicodeWidthStr::width)
         .max()
         .unwrap_or(0);
 
     #[allow(clippy::cast_possible_truncation)]
-    (name_len as u16, id_len as u16)
+    (vgname_len as u16, pvname_len as u16, lvname_len as u16)
 }
-
