@@ -2,6 +2,8 @@
 // Test out Rust and ratatui.
 //
 
+pub mod lvm;
+
 use color_eyre::{Result};
 use ratatui::{
     DefaultTerminal, Frame,
@@ -94,11 +96,6 @@ impl VgTableData {
 enum ViewType {
     VgOverview,
     VgInfo,
-}
-
-struct NameValue {
-    name: String,
-    value: String,
 }
 
 struct App {
@@ -287,7 +284,8 @@ impl App {
                 .fg(self.colors.header_fg)
                 .bg(self.colors.header_bg),
         ];
-        let vginfo = get_vg_info(&self.sel_vg_name);
+        
+        let vginfo = lvm::get_vg_info(&self.sel_vg_name);
 
         for vginfo in &vginfo {
             let line = format!("{:<10} {:<20}", vginfo.name, vginfo.value);
@@ -390,19 +388,6 @@ impl App {
             );
         frame.render_widget(info_footer, area);
     }
-}
-
-fn get_vg_info(vg_name: &String) -> Vec<NameValue> {
-    vec![
-        NameValue {
-            name: "VG Name".to_string(),
-            value: vg_name.to_string(),
-        },
-        NameValue {
-            name: "Format".to_string(),
-            value: "lvm2".to_string(),
-        },
-    ]
 }
 
 fn constraint_len_calculator(items: &[VgTableData]) -> (u16, u16, u16) {
