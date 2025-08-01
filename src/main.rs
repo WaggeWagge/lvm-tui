@@ -11,7 +11,7 @@ use ratatui::{
     text::{Line, Text},
     widgets::{
         Block, BorderType, Borders, Cell, HighlightSpacing, Paragraph, Row, Scrollbar,
-        ScrollbarOrientation, ScrollbarState, Table, TableState, Wrap,
+        ScrollbarOrientation, ScrollbarState, Table, TableState,
     },
 };
 use style::palette::tailwind;
@@ -87,9 +87,6 @@ impl VgTableData {
     }
     fn pv_name(&self) -> &str {
         &self.pv_name
-    }
-    fn lv_name(&self) -> &str {
-        &self.lv_name
     }
 }
 
