@@ -2,15 +2,13 @@
 // Test out Rust and ratatui.
 //
 
-use color_eyre::Result;
-use crossterm::event::KeyModifiers;
-use itertools::Itertools;
+use color_eyre::{Result};
 use ratatui::{
     DefaultTerminal, Frame,
     crossterm::event::{self, Event, KeyCode, KeyEventKind},
     layout::{Constraint, Layout, Margin, Rect},
     style::{self, Color, Modifier, Style, Stylize},
-    text::Text,
+    text::{Line, Text},
     widgets::{
         Block, BorderType, Borders, Cell, HighlightSpacing, Paragraph, Row, Scrollbar,
         ScrollbarOrientation, ScrollbarState, Table, TableState, Wrap,
@@ -29,6 +27,8 @@ const INFO_TEXT: [&str; 2] = [
     "(Esc) quit | (↑) move up | (↓) move down | (←) move left | (→) move right",
     "(Shift + →) next color | (Shift + ←) previous color",
 ];
+
+const TITLE: &str = "LVM";
 
 const ITEM_HEIGHT: usize = 4;
 
@@ -82,18 +82,26 @@ impl VgTableData {
     const fn ref_array(&self) -> [&String; 3] {
         [&self.vg_name, &self.pv_name, &self.lv_name]
     }
-
     fn vg_name(&self) -> &str {
         &self.vg_name
     }
-
     fn pv_name(&self) -> &str {
         &self.pv_name
     }
-
     fn lv_name(&self) -> &str {
         &self.lv_name
     }
+}
+
+#[derive(PartialEq)]
+enum ViewType {
+    VgOverview,
+    VgInfo,
+}
+
+struct NameValue {
+    name: String,
+    value: String,
 }
 
 struct App {
@@ -102,7 +110,10 @@ struct App {
     vgd_longest_item_lens: (u16, u16, u16), // order is (vg_name, pv_name_ lv_name)
     scroll_state: ScrollbarState,
     colors: TableColors,
-    color_index: usize,    
+    color_index: usize,
+    view_type: ViewType,
+    sel_vg_name: String,
+    title: String,
 }
 
 impl App {
@@ -145,7 +156,10 @@ impl App {
             scroll_state: ScrollbarState::new((vgs.len() - 1) * ITEM_HEIGHT),
             colors: TableColors::new(&PALETTES[0]),
             color_index: 0,
-            items: vgs,           
+            items: vgs,
+            view_type: ViewType::VgOverview,
+            sel_vg_name: String::new(),
+            title: String::from(TITLE),
         }
     }
     pub fn next_row(&mut self) {
@@ -184,43 +198,37 @@ impl App {
 
     pub fn previous_column(&mut self) {
         self.state.select_previous_column();
-    }
-
-    pub fn next_color(&mut self) {
-        self.color_index = (self.color_index + 1) % PALETTES.len();
-    }
-
-    pub fn previous_color(&mut self) {
-        let count = PALETTES.len();
-        self.color_index = (self.color_index + count - 1) % count;
-    }
+    }   
 
     pub fn set_colors(&mut self) {
         self.colors = TableColors::new(&PALETTES[self.color_index]);
     }
 
     pub fn acton_cell(&mut self) {
-        let i = match self.state.selected() {
-            Some(i) => i,
-            None => 0,
-        };
-        let ic: (usize, usize) = match self.state.selected_cell() {
-            Some(ic) => ic,
-            None => (0, 0),
-        };
-        
-        //println!("Selected row: {i}");
-        //println!("Selected cell: {},{}", ic.0, ic.1);        
-                        
-        let item: &VgTableData = self.items.get(ic.0).expect("Unexpected error");
-        let cell_value: String = match ic.1 {
-            0 => item.vg_name.clone(),
-            1 => item.pv_name.clone(),
-            2 => item.lv_name.clone(),
-            _ => "".to_string(),
-        };
-            
-        println!("selected value: {cell_value}");        
+        if self.view_type == ViewType::VgOverview {
+            let ic: (usize, usize) = match self.state.selected_cell() {
+                Some(ic) => ic,
+                None => (0, 0),
+            };
+
+            let item: &VgTableData = self.items.get(ic.0).expect("Unexpected error");
+            match ic.1 {
+                0 => {
+                    self.view_type = ViewType::VgInfo;
+                    self.sel_vg_name = item.vg_name.clone();
+                    item.vg_name.clone()
+                }
+                1 => {
+                    self.view_type = ViewType::VgOverview;
+                    item.pv_name.clone()
+                }
+                2 => {
+                    self.view_type = ViewType::VgOverview;
+                    item.lv_name.clone()
+                }
+                _ => {"".to_string()},
+            };
+        }
     }
 
     fn run(mut self, mut terminal: DefaultTerminal) -> Result<()> {
@@ -229,16 +237,19 @@ impl App {
 
             if let Event::Key(key) = event::read()? {
                 if key.kind == KeyEventKind::Press {
-                    let shift_pressed = key.modifiers.contains(KeyModifiers::SHIFT);
                     match key.code {
                         KeyCode::Enter => self.acton_cell(),
-                        KeyCode::Char('q') | KeyCode::Esc => return Ok(()),
+                        KeyCode::Char('q') | KeyCode::Esc => {
+                            // if in main window, quit
+                            if self.view_type == ViewType::VgOverview {
+                                return Ok(());
+                            } else {
+                                // to back to main view
+                                self.view_type = ViewType::VgOverview;
+                            }
+                        }
                         KeyCode::Char('j') | KeyCode::Down => self.next_row(),
                         KeyCode::Char('k') | KeyCode::Up => self.previous_row(),
-                        KeyCode::Char('l') | KeyCode::Right if shift_pressed => self.next_color(),
-                        KeyCode::Char('h') | KeyCode::Left if shift_pressed => {
-                            self.previous_color();
-                        }
                         KeyCode::Char('l') | KeyCode::Right => self.next_column(),
                         KeyCode::Char('h') | KeyCode::Left => self.previous_column(),
                         _ => {}
@@ -256,11 +267,44 @@ impl App {
 
         let table_block = Block::default()
             .border_style(Style::new().fg(self.colors.block_border))
+            .title_top(Line::raw(self.title.to_string()))
             .borders(Borders::ALL);
 
-        self.render_table(table_block, frame, rects[0]);
-        self.render_scrollbar(frame, rects[0]);
+        // What to draw, vgview ...
+        if self.view_type == ViewType::VgOverview {
+            self.render_table(table_block, frame, rects[0]);
+            self.render_scrollbar(frame, rects[0]);
+        } else if self.view_type == ViewType::VgInfo {
+            self.render_vginfo(table_block, frame, rects[0]);
+            self.render_scrollbar(frame, rects[0]);
+        }
+
         self.render_footer(frame, rects[1]);
+    }
+
+    fn render_vginfo(&mut self, sb: Block, frame: &mut Frame, area: Rect) {
+        let header_str = format!("{:<10} {:<20}", "Name", "Value");
+
+        let mut lines = vec![
+            Line::raw(header_str)
+                .fg(self.colors.header_fg)
+                .bg(self.colors.header_bg),
+        ];
+        let vginfo = get_vg_info(&self.sel_vg_name);
+
+        for vginfo in &vginfo {
+            let line = format!("{:<10} {:<20}", vginfo.name, vginfo.value);
+            lines.push(Line::raw(line).fg(self.colors.header_fg));
+        }
+
+        // Render a paragraph with details of vg
+        let para = Paragraph::new(lines).block(sb).style(
+            Style::new()
+                .fg(self.colors.row_fg)
+                .bg(self.colors.buffer_bg),
+        );
+
+        frame.render_widget(para, area);
     }
 
     fn render_table(&mut self, sb: Block, frame: &mut Frame, area: Rect) {
@@ -316,7 +360,7 @@ impl App {
         .bg(self.colors.buffer_bg)
         .block(sb)
         .highlight_spacing(HighlightSpacing::Always);
-        
+
         frame.render_stateful_widget(t, area, &mut self.state);
     }
 
@@ -349,6 +393,19 @@ impl App {
             );
         frame.render_widget(info_footer, area);
     }
+}
+
+fn get_vg_info(vg_name: &String) -> Vec<NameValue> {
+    vec![
+        NameValue {
+            name: "VG Name".to_string(),
+            value: vg_name.to_string(),
+        },
+        NameValue {
+            name: "Format".to_string(),
+            value: "lvm2".to_string(),
+        },
+    ]
 }
 
 fn constraint_len_calculator(items: &[VgTableData]) -> (u16, u16, u16) {
