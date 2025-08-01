@@ -3,6 +3,7 @@ name = "lvm-tui"
 version = "0.1.1"
 edition = "2024"
 
+
 [dependencies]
 color-eyre = "0.6.3"
 crossterm = "0.28.1"
