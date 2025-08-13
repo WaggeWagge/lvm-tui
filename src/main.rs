@@ -4,7 +4,7 @@
 
 pub mod lvm;
 
-use color_eyre::{Result};
+use color_eyre::Result;
 use ratatui::{
     DefaultTerminal, Frame,
     crossterm::event::{self, Event, KeyCode, KeyEventKind},
@@ -37,11 +37,11 @@ const TITLE: &str = "LVM";
 const ITEM_HEIGHT: usize = 4;
 
 fn main() -> Result<()> {
-    if ! lvm::init() {        
+    if !lvm::init() {
         panic!("Failed to scan blockdevs");
     }
     color_eyre::install()?;
-    let terminal = ratatui::init();    
+    let terminal = ratatui::init();
     let app_result = App::new().run(terminal);
     ratatui::restore();
     app_result
@@ -117,30 +117,40 @@ struct App {
 
 impl App {
     fn new() -> Self {
-        let vg_list = lvm::get_vgs();        
-        let pv_list = lvm::get_pvs(); 
+        let vg_list = lvm::get_vgs();
+        let pv_list = lvm::get_pvs();
         let lv_list = lvm::get_lvs();
 
         let mut vgs = Vec::<VgTableData>::new();
 
-        for vg_name in vg_list  {
-            let pvs_in_vg : Vec<String> = lvm::find_pvs_by_vg(&vg_name, &pv_list);
+        for vg_name in vg_list {
+            let pvs_in_vg: Vec<String> = lvm::find_pvs_by_vg(&vg_name, &pv_list);
             let mut rows = Vec::<VgTableData>::new();
-          
+
             for pv_name in pvs_in_vg {
-                let vg_table_item : VgTableData = VgTableData { vg_name: vg_name.clone(), pv_name: pv_name.clone(), lv_name: String::from("") };  
+                let vg_table_item: VgTableData = VgTableData {
+                    vg_name: vg_name.clone(),
+                    pv_name: pv_name.clone(),
+                    lv_name: String::from(""),
+                };
                 rows.push(vg_table_item);
             }
 
-            let lvs_in_vg : Vec<String> = lvm::find_lvs_by_vg(&vg_name, &lv_list);
+            let lvs_in_vg: Vec<String> = lvm::find_lvs_by_vg(&vg_name, &lv_list);
             for lv_name in lvs_in_vg {
-                // Go though existing rows, if find space i.e. "", add there, if no empty lv_names to update left, add new row.                
-                if ! rows.last().unwrap().lv_name.eq("") { // if lv_name if filled in, add new row
+                // Go though existing rows, if find space i.e. "", update row,
+                // if no empty lv_names ramaining, add new row.
+                if !rows.last().unwrap().lv_name.eq("") {
                     // Add new
-                    let row : VgTableData = VgTableData { vg_name: String::from(""), pv_name: String::from(""), lv_name: lv_name.clone() };                    
+                    let row: VgTableData = VgTableData {
+                        vg_name: String::from(""),
+                        pv_name: String::from(""),
+                        lv_name: lv_name.clone(),
+                    };
                     rows.push(row);
-                } else { // Update existing                  
-                    for row in rows.iter_mut()  {
+                } else {
+                    // Update existing
+                    for row in rows.iter_mut() {
                         if row.lv_name.eq("") {
                             row.lv_name = lv_name.clone();
                             break;
@@ -151,17 +161,22 @@ impl App {
 
             // If no match, put row with vgname only
             if rows.len() < 1 {
-                let row : VgTableData = VgTableData { vg_name: vg_name.clone(), pv_name: String::from(""), lv_name: String::from("") };  
+                let row: VgTableData = VgTableData {
+                    vg_name: vg_name.clone(),
+                    pv_name: String::from(""),
+                    lv_name: String::from(""),
+                };
                 vgs.push(row);
             } else {
                 vgs.append(&mut rows);
             }
         }
-      
-        let initial_cnt_len = match vgs.len() { // dont * with 0
+
+        let initial_cnt_len = match vgs.len() {
+            // dont * with 0
             0 => ITEM_HEIGHT,
             1 => ITEM_HEIGHT,
-            _ => (vgs.len() - 1) * ITEM_HEIGHT
+            _ => (vgs.len() - 1) * ITEM_HEIGHT,
         };
 
         Self {
@@ -176,6 +191,7 @@ impl App {
             title: String::from(TITLE),
         }
     }
+
     pub fn next_row(&mut self) {
         let i = match self.state.selected() {
             Some(i) => {
@@ -212,7 +228,7 @@ impl App {
 
     pub fn previous_column(&mut self) {
         self.state.select_previous_column();
-    }   
+    }
 
     pub fn set_colors(&mut self) {
         self.colors = TableColors::new(&PALETTES[self.color_index]);
@@ -228,9 +244,10 @@ impl App {
             let item: &VgTableData = self.items.get(ic.0).expect("Unexpected error");
             match ic.1 {
                 0 => {
-                    if ! item.vg_name.eq("") { // if cell is "", nothing to act on
+                    if !item.vg_name.eq("") {
+                        // if cell is "", nothing to act on
                         self.view_type = ViewType::VgInfo;
-                        self.sel_vg_name = item.vg_name.clone();                        
+                        self.sel_vg_name = item.vg_name.clone();
                     }
                     item.vg_name.clone()
                 }
@@ -242,13 +259,12 @@ impl App {
                     self.view_type = ViewType::VgOverview;
                     item.lv_name.clone()
                 }
-                _ => {"".to_string()},
+                _ => "".to_string(),
             };
         }
     }
 
     fn run(mut self, mut terminal: DefaultTerminal) -> Result<()> {
-
         loop {
             terminal.draw(|frame| self.draw(frame))?;
 
@@ -307,7 +323,7 @@ impl App {
                 .fg(self.colors.header_fg)
                 .bg(self.colors.header_bg),
         ];
-        
+
         let vginfo = lvm::get_vg_info(&self.sel_vg_name);
 
         for vginfo in &vginfo {
@@ -353,13 +369,19 @@ impl App {
                 .map(|content| Cell::from(Text::from(format!("\n{content}\n"))))
                 .collect::<Row>()
                 .style(Style::new().fg(self.colors.row_fg).bg(color))
-                .height(4)
+                .height(3)
         });
         let bar = " █ ";
         // Set sane min values
-        if self.vgd_longest_item_lens.0 < 10 { self.vgd_longest_item_lens.0 = 10 + 1; } // +1 paddong
-        if self.vgd_longest_item_lens.1 < 10 { self.vgd_longest_item_lens.0 = 10; }
-        if self.vgd_longest_item_lens.2 < 10 { self.vgd_longest_item_lens.0 = 10; }
+        if self.vgd_longest_item_lens.0 < 10 {
+            self.vgd_longest_item_lens.0 = 10 + 1;
+        } // +1 paddong
+        if self.vgd_longest_item_lens.1 < 10 {
+            self.vgd_longest_item_lens.0 = 10;
+        }
+        if self.vgd_longest_item_lens.2 < 10 {
+            self.vgd_longest_item_lens.0 = 10;
+        }
         let t = Table::new(
             rows,
             [
@@ -447,4 +469,3 @@ fn constraint_len_calculator(items: &[VgTableData]) -> (u16, u16, u16) {
     #[allow(clippy::cast_possible_truncation)]
     (vgname_len as u16, pvname_len as u16, lvname_len as u16)
 }
-
