@@ -1,7 +1,6 @@
 //
 // Test out Rust and ratatui.
 //
-
 pub mod lvm;
 
 use color_eyre::Result;
