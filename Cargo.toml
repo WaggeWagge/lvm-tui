@@ -2,6 +2,9 @@
 name = "lvm-tui"
 version = "0.1.1"
 edition = "2024"
+license = "n/a"
+authors = ["kluxklux29@gmail.com"]
+description = "Console tool showing infomation about LVM."
 
 [dependencies]
 color-eyre = "0.6.3"
@@ -13,3 +16,17 @@ fakeit = "1.1"
 
 [build-dependencies]
 bindgen = "0.71.0"
+
+[package.metadata.deb]
+section = "unknown"
+revision = "2"
+changelog = "debian/changelog"
+
+[package.metadata.rpm]
+package = "freecolor"
+
+[package.metadata.rpm.cargo]
+buildflags = ["--release"]
+
+[package.metadata.rpm.targets]
+freecolor = { path = "/usr/bin/lvm-tui" }
