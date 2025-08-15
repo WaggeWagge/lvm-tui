@@ -3,7 +3,12 @@
 #![allow(non_snake_case)]
 #![allow(improper_ctypes)]
 
-use std::{ffi::CStr, ptr};
+use std::{
+    ffi::{CStr, CString},
+    ptr,
+};
+
+use ratatui::layout::Size;
 
 // Include bindings generated from "wrapper.h
 include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
@@ -23,6 +28,13 @@ pub struct Lv {
     pub vg_name: String,
 }
 
+pub struct LvmVgData {
+    pub name: String,
+    pub free: u64, // bytes 
+    pub size: u64, // bytes 
+    pub pv_count: u64,
+}
+
 pub fn init() -> bool {
     unsafe {
         if bd_lvm_init() != 1 {
@@ -33,17 +45,30 @@ pub fn init() -> bool {
     }
 }
 
-pub fn get_vg_info(vg_name: &String) -> Vec<NameValue> {
-    vec![
-        NameValue {
-            name: "VG Name".to_string(),
-            value: vg_name.to_string(),
-        },
-        NameValue {
-            name: "Format".to_string(),
-            value: "lvm2".to_string(),
-        },
-    ]
+pub fn get_vg_info(vg_name: &String) -> LvmVgData {
+    let error: *mut *mut GError = ptr::null_mut();
+    let vg_name_ptr = CString::new(vg_name.to_string())
+        .expect("failed to make CString")
+        .into_raw();
+
+    unsafe {
+        let bd_lvm_vg_data = bd_lvm_vginfo(vg_name_ptr, error);
+        let lvm_vg_data: LvmVgData = {
+            LvmVgData {
+                name: CStr::from_ptr((*bd_lvm_vg_data).name)
+                    .to_str()
+                    .unwrap()
+                    .to_string(),
+                free: (*bd_lvm_vg_data).free,
+                size: (*bd_lvm_vg_data).size,
+                pv_count: (*bd_lvm_vg_data).pv_count,
+            }
+        };
+        let _ = CString::from_raw(vg_name_ptr); // free mem
+        bd_lvm_vgdata_free(bd_lvm_vg_data);
+
+        return lvm_vg_data;
+    }
 }
 
 pub fn get_vgs() -> Vec<String> {

@@ -26,9 +26,8 @@ const PALETTES: [tailwind::Palette; 4] = [
     tailwind::INDIGO,
     tailwind::SLATE,
 ];
-const INFO_TEXT: [&str; 1] = [
-    "(Esc) quit | (↑) move up | (↓) move down | (←) move left | (→) move right"    
-];
+const INFO_TEXT: [&str; 1] =
+    ["(Esc) quit | (↑) move up | (↓) move down | (←) move left | (→) move right"];
 
 const TITLE: &str = "LVM";
 
@@ -323,11 +322,14 @@ impl App {
         ];
 
         let vginfo = lvm::get_vg_info(&self.sel_vg_name);
-
-        for vginfo in &vginfo {
-            let line = format!("{:<10} {:<20}", vginfo.name, vginfo.value);
-            lines.push(Line::raw(line).fg(self.colors.header_fg));
-        }
+        let line = format!("{:<10} {:<20}", "VG", vginfo.name);
+        lines.push(Line::raw(line).fg(self.colors.header_fg));
+        let line = format!("{:<10} {:<20}", "size (g)", vginfo.size/1000/1000/1000);
+        lines.push(Line::raw(line).fg(self.colors.header_fg));
+        let line = format!("{:<10} {:<20}", "free (g)", vginfo.free/1000/1000/1000);
+        lines.push(Line::raw(line).fg(self.colors.header_fg));
+        let line = format!("{:<10} {:<20}", "pv_count", vginfo.pv_count);
+        lines.push(Line::raw(line).fg(self.colors.header_fg));
 
         // Render a paragraph with details of vg
         let para = Paragraph::new(lines).block(sb).style(
@@ -427,11 +429,11 @@ impl App {
                     .fg(self.colors.row_fg)
                     .bg(self.colors.buffer_bg),
             )
-            .centered()            
+            .centered()
             .block(
                 Block::bordered()
-                    .border_type(BorderType::Double)                    
-                    .border_style(Style::new().fg(self.colors.footer_border_color)),                    
+                    .border_type(BorderType::Double)
+                    .border_style(Style::new().fg(self.colors.footer_border_color)),
             );
         frame.render_widget(info_footer, area);
     }
