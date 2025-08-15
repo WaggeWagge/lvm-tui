@@ -19,7 +19,7 @@ bindgen = "0.71.0"
 
 [package.metadata.deb]
 section = "unknown"
-revision = "2"
+revision = "1"
 changelog = "debian/changelog"
 
 [package.metadata.rpm]
