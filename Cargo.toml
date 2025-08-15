@@ -23,7 +23,7 @@ revision = "1"
 changelog = "debian/changelog"
 
 [package.metadata.rpm]
-package = "freecolor"
+package = "lvm-tui"
 
 [package.metadata.rpm.cargo]
 buildflags = ["--release"]
