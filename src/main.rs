@@ -26,14 +26,13 @@ const PALETTES: [tailwind::Palette; 4] = [
     tailwind::INDIGO,
     tailwind::SLATE,
 ];
-const INFO_TEXT: [&str; 2] = [
-    "(Esc) quit | (↑) move up | (↓) move down | (←) move left | (→) move right",
-    "(Shift + →) next color | (Shift + ←) previous color",
+const INFO_TEXT: [&str; 1] = [
+    "(Esc) quit | (↑) move up | (↓) move down | (←) move left | (→) move right"    
 ];
 
 const TITLE: &str = "LVM";
 
-const ITEM_HEIGHT: usize = 4;
+const ITEM_HEIGHT: usize = 1;
 
 fn main() -> Result<()> {
     if !lvm::init() {
@@ -142,7 +141,7 @@ impl App {
                 if !rows.last().unwrap().lv_name.eq("") {
                     // Add new
                     let row: VgTableData = VgTableData {
-                        vg_name: String::from(""),
+                        vg_name: vg_name.clone(),
                         pv_name: String::from(""),
                         lv_name: lv_name.clone(),
                     };
@@ -292,7 +291,7 @@ impl App {
     }
 
     fn draw(&mut self, frame: &mut Frame) {
-        let vertical = &Layout::vertical([Constraint::Min(5), Constraint::Length(4)]);
+        let vertical = &Layout::vertical([Constraint::Min(5), Constraint::Length(3)]);
         let rects = vertical.split(frame.area());
 
         self.set_colors();
@@ -365,10 +364,10 @@ impl App {
             };
             let item = data.ref_array();
             item.into_iter()
-                .map(|content| Cell::from(Text::from(format!("\n{content}\n"))))
+                .map(|content| Cell::from(Text::from(format!("{content}"))))
                 .collect::<Row>()
                 .style(Style::new().fg(self.colors.row_fg).bg(color))
-                .height(3)
+                .height(1)
         });
         let bar = " █ ";
         // Set sane min values
@@ -428,11 +427,11 @@ impl App {
                     .fg(self.colors.row_fg)
                     .bg(self.colors.buffer_bg),
             )
-            .centered()
+            .centered()            
             .block(
                 Block::bordered()
-                    .border_type(BorderType::Double)
-                    .border_style(Style::new().fg(self.colors.footer_border_color)),
+                    .border_type(BorderType::Double)                    
+                    .border_style(Style::new().fg(self.colors.footer_border_color)),                    
             );
         frame.render_widget(info_footer, area);
     }
