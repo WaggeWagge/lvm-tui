@@ -8,7 +8,6 @@ use std::{
     ptr,
 };
 
-use ratatui::layout::Size;
 
 // Include bindings generated from "wrapper.h
 include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
@@ -23,15 +22,20 @@ pub struct Pv {
     pub vg_name: String,
 }
 
+#[derive(Clone)]
 pub struct Lv {
     pub lv_name: String,
     pub vg_name: String,
+    pub size: u64, // bytes
+    pub attr: String,
+    pub segtype: String,
+    pub uuid: String,
 }
 
 pub struct LvmVgData {
     pub name: String,
-    pub free: u64, // bytes 
-    pub size: u64, // bytes 
+    pub free: u64, // bytes
+    pub size: u64, // bytes
     pub pv_count: u64,
 }
 
@@ -153,6 +157,19 @@ pub fn get_lvs() -> Vec<Lv> {
                     .to_str()
                     .unwrap()
                     .to_string(),
+                size: (*lvm_lv_data).size,
+                attr: CStr::from_ptr((*lvm_lv_data).attr)
+                    .to_str()
+                    .unwrap()
+                    .to_string(),
+                segtype: CStr::from_ptr((*lvm_lv_data).segtype)
+                    .to_str()
+                    .unwrap()
+                    .to_string(),
+                uuid: CStr::from_ptr((*lvm_lv_data).uuid)
+                    .to_str()
+                    .unwrap()
+                    .to_string(),
             };
 
             lv_list.push(lv_item);
@@ -183,6 +200,18 @@ pub fn find_lvs_by_vg(vg_name: &String, lv_list: &Vec<Lv>) -> Vec<String> {
     for lv_item in lv_list {
         if vg_name.eq(&lv_item.vg_name) {
             lvs_in_vg_list.push(lv_item.lv_name.clone());
+        }
+    }
+
+    return lvs_in_vg_list;
+}
+
+pub fn get_lvinfo_by_vg(vg_name: &String, lv_list: &Vec<Lv>) -> Vec<Lv> {
+    let mut lvs_in_vg_list = Vec::<Lv>::new();
+
+    for lv_item in lv_list {
+        if vg_name.eq(&lv_item.vg_name) {
+            lvs_in_vg_list.push(lv_item.clone());
         }
     }
 

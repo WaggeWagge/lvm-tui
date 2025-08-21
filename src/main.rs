@@ -7,7 +7,7 @@ use color_eyre::Result;
 use ratatui::{
     DefaultTerminal, Frame,
     crossterm::event::{self, Event, KeyCode, KeyEventKind},
-    layout::{Constraint, Layout, Margin, Rect},
+    layout::{Constraint, Direction, Layout, Margin, Rect},
     style::{self, Color, Modifier, Style, Stylize},
     text::{Line, Text},
     widgets::{
@@ -18,8 +18,6 @@ use ratatui::{
 use style::palette::tailwind;
 use unicode_width::UnicodeWidthStr;
 
-use crate::lvm::{Lv, Pv};
-
 const PALETTES: [tailwind::Palette; 4] = [
     tailwind::CYAN,
     tailwind::EMERALD,
@@ -29,7 +27,7 @@ const PALETTES: [tailwind::Palette; 4] = [
 const INFO_TEXT: [&str; 1] =
     ["(Esc) quit | (↑) move up | (↓) move down | (←) move left | (→) move right"];
 
-const TITLE: &str = "LVM";
+const TITLE: &str = " LVM-TUI ";
 
 const ITEM_HEIGHT: usize = 1;
 
@@ -177,7 +175,9 @@ impl App {
         };
 
         Self {
-            state: TableState::default().with_selected(0),
+            state: TableState::default()
+                .with_selected(0)
+                .with_selected_cell((0, 0)),
             vgd_longest_item_lens: constraint_len_calculator(&vgs),
             scroll_state: ScrollbarState::new(initial_cnt_len),
             colors: TableColors::new(&PALETTES[0]),
@@ -291,29 +291,82 @@ impl App {
 
     fn draw(&mut self, frame: &mut Frame) {
         let vertical = &Layout::vertical([Constraint::Min(5), Constraint::Length(3)]);
-        let rects = vertical.split(frame.area());
+
+        let outer_layout = vertical.split(frame.area());
 
         self.set_colors();
 
         let table_block = Block::default()
             .border_style(Style::new().fg(self.colors.block_border))
+            .bg(self.colors.buffer_bg)
             .title_top(Line::raw(self.title.to_string()))
             .borders(Borders::ALL);
 
         // What to draw, vgview ...
         if self.view_type == ViewType::VgOverview {
-            self.render_table(table_block, frame, rects[0]);
-            self.render_scrollbar(frame, rects[0]);
+            self.render_table(table_block, frame, outer_layout[0]);
+            self.render_scrollbar(frame, outer_layout[0]);
         } else if self.view_type == ViewType::VgInfo {
-            self.render_vginfo(table_block, frame, rects[0]);
-            self.render_scrollbar(frame, rects[0]);
-        }
+            // inner layout to hold vginfo
+            let inner_layout = &Layout::default()
+                .direction(Direction::Vertical)
+                .constraints(vec![Constraint::Percentage(25), Constraint::Percentage(75)])
+                .margin(1)
+                .split(outer_layout[0]);
 
-        self.render_footer(frame, rects[1]);
+            frame.render_widget(table_block, outer_layout[0]);
+            self.render_vginfo(frame, inner_layout[0]);
+            self.render_lvs(frame, inner_layout[1]);            
+        }
+        self.render_footer(frame, outer_layout[1]);
     }
 
-    fn render_vginfo(&mut self, sb: Block, frame: &mut Frame, area: Rect) {
+    fn render_lvs(&mut self, frame: &mut Frame, area: Rect) {
+        let header_str = format!(
+            "{:<20} {:<8} {:<12} {:<8} {:<39}",
+            "LV", "Size(g)", "attr", "segtype", "uuid"
+        );
+        let vg_info_block = Block::default()
+            .border_style(Style::new().fg(self.colors.block_border))
+            .border_type(BorderType::Rounded)
+            .borders(Borders::ALL);
+
+        let mut lines = vec![
+            Line::raw(header_str)
+                .fg(self.colors.header_fg)
+                .bg(self.colors.header_bg),
+        ];
+
+        let lv_list = lvm::get_lvinfo_by_vg(&self.sel_vg_name, &lvm::get_lvs());
+        for lv_item in lv_list {
+            let gb_conv = 1000.0 * 1000.0 * 1000.0;
+            let line = format!(
+                "{:<20} {:<8.1} {:<12} {:<8} {:<39}",
+                lv_item.lv_name,
+                (lv_item.size as f64) / gb_conv,
+                lv_item.attr,
+                lv_item.segtype,
+                lv_item.uuid,
+            );
+            lines.push(Line::raw(line.clone()).fg(self.colors.header_fg));           
+        }
+       
+        // Render a paragraph with details of vg
+        let para = Paragraph::new(lines).block(vg_info_block).style(
+            Style::new()
+                .fg(self.colors.row_fg)
+                .bg(self.colors.buffer_bg),
+        );
+
+        frame.render_widget(para, area);
+    }
+
+    fn render_vginfo(&mut self, frame: &mut Frame, area: Rect) {
         let header_str = format!("{:<10} {:<20}", "Name", "Value");
+        let vg_info_block = Block::default()
+            .border_style(Style::new().fg(self.colors.block_border))
+            .border_type(BorderType::Rounded)
+            .borders(Borders::ALL);
 
         let mut lines = vec![
             Line::raw(header_str)
@@ -324,15 +377,30 @@ impl App {
         let vginfo = lvm::get_vg_info(&self.sel_vg_name);
         let line = format!("{:<10} {:<20}", "VG", vginfo.name);
         lines.push(Line::raw(line).fg(self.colors.header_fg));
-        let line = format!("{:<10} {:<20}", "size (g)", vginfo.size/1000/1000/1000);
+        let line = format!(
+            "{:<10} {:<20}",
+            "size (g)",
+            vginfo.size / 1000 / 1000 / 1000
+        );
         lines.push(Line::raw(line).fg(self.colors.header_fg));
-        let line = format!("{:<10} {:<20}", "free (g)", vginfo.free/1000/1000/1000);
+        let line = format!(
+            "{:<10} {:<20}",
+            "free (g)",
+            vginfo.free / 1000 / 1000 / 1000
+        );
         lines.push(Line::raw(line).fg(self.colors.header_fg));
+
+        let used = vginfo.size - vginfo.free;
+        let used = (used as f64) / (vginfo.size as f64) * 100.0;
+
+        let line = format!("{:<10} {:<20.1}", "%used", used);
+        lines.push(Line::raw(line).fg(self.colors.header_fg));
+
         let line = format!("{:<10} {:<20}", "pv_count", vginfo.pv_count);
         lines.push(Line::raw(line).fg(self.colors.header_fg));
 
         // Render a paragraph with details of vg
-        let para = Paragraph::new(lines).block(sb).style(
+        let para = Paragraph::new(lines).block(vg_info_block).style(
             Style::new()
                 .fg(self.colors.row_fg)
                 .bg(self.colors.buffer_bg),
