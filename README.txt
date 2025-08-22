@@ -1,22 +1,26 @@
 Dependencies for building
 --------------------------
 
-lvm-tui requires liblockdev version 3.
+lvm-tui requires liblockdev version 3, glib2-devel and clang to build.
 
 c-libs/packages
 -----------------------
 debian/ubuntu:
-libblockdev-dev (v 3+)
-libblockdev-lvm-dev
+ libblockdev-dev (v 3+)
+ libblockdev-lvm-dev
+ libglib2.0-dev
 
-redhat/redora:
-libblockdev-devel
-libblockdev-lvm-devel
+redhat/fedora/suse:
+ libblockdev-devel
+ libblockdev-lvm-devel
+ glib2-devel
 
 archlinux:
-libblockdev
-libblockdev-lvm
+ libblockdev
+ libblockdev-lvm
+ --possibly glib2 as well.
 
 clang
+
 -----------------------
 
