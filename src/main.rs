@@ -18,6 +18,8 @@ use ratatui::{
 use style::palette::tailwind;
 use unicode_width::UnicodeWidthStr;
 
+use crate::lvm::{LvmLvData, LvmVgData};
+
 const PALETTES: [tailwind::Palette; 4] = [
     tailwind::CYAN,
     tailwind::EMERALD,
@@ -98,6 +100,158 @@ enum ViewType {
     VgInfo,
 }
 
+struct VgInfoView {
+    state: TableState,
+    vg_name: String,
+    vg_item: Option<LvmVgData>,
+    lv_items: Option<Vec<LvmLvData>>,   
+    scroll_state: ScrollbarState,
+    colors: TableColors,
+}
+
+impl VgInfoView {
+    fn new(vg_name: &String) -> Self {
+        Self {
+            vg_name: vg_name.clone(),
+            state: TableState::default()
+                .with_selected(0)
+                .with_selected_cell((0, 0)),
+            scroll_state: ScrollbarState::new(15),           
+            colors: TableColors::new(&PALETTES[0]),
+            vg_item: None,
+            lv_items: None,
+        }
+    }
+
+    pub fn fetch_data(&mut self) {
+        self.vg_item = Some(lvm::get_vg_info(&self.vg_name));
+        self.lv_items = Some(lvm::get_lvinfo_by_vg(&self.vg_name, &lvm::get_lvs()));
+    }
+
+    fn render_scrollbar(&mut self, frame: &mut Frame, area: Rect) {
+        frame.render_stateful_widget(
+            Scrollbar::default()
+                .orientation(ScrollbarOrientation::VerticalRight)
+                .begin_symbol(None)
+                .end_symbol(None),
+            area.inner(Margin {
+                vertical: 1,
+                horizontal: 1,
+            }),
+            &mut self.scroll_state,
+        );
+    }
+
+    fn render_lvs_table(&mut self, frame: &mut Frame, area: Rect) {
+        let sb = Block::default()
+            .border_style(Style::new().fg(self.colors.block_border))
+            .border_type(BorderType::Rounded)
+            .borders(Borders::ALL);
+        let header_style = Style::default()
+            .fg(self.colors.header_fg)
+            .bg(self.colors.header_bg);
+        let selected_row_style = Style::default()
+            .add_modifier(Modifier::REVERSED)
+            .fg(self.colors.selected_row_style_fg);
+        let selected_col_style = Style::default().fg(self.colors.selected_column_style_fg);
+        let selected_cell_style = Style::default()
+            .add_modifier(Modifier::REVERSED)
+            .fg(self.colors.selected_cell_style_fg);
+
+        let header = ["LV", "size(g)", "attr", "segtype", "uuid"]
+            .into_iter()
+            .map(Cell::from)
+            .collect::<Row>()
+            .style(header_style)
+            .height(1);
+        let rows = self
+            .lv_items
+            .as_ref()
+            .unwrap()
+            .iter()
+            .enumerate()
+            .map(|(i, data)| {
+                let color = match i % 2 {
+                    0 => self.colors.normal_row_color,
+                    _ => self.colors.alt_row_color,
+                };
+                let gb_conv = 1000.0 * 1000.0 * 1000.0;
+                let size_gb = (data.size as f64) / gb_conv;
+                let size_gb = format!("{:.2}", size_gb);
+                let item: [&str; 5] = [
+                    &data.lv_name,
+                    &size_gb,
+                    &data.segtype,
+                    &data.attr,
+                    &data.uuid,
+                ];
+                item.into_iter()
+                    .map(|content| Cell::from(Text::from(format!("{content}"))))
+                    .collect::<Row>()
+                    .style(Style::new().fg(self.colors.row_fg).bg(color))
+                    .height(1)
+            });
+        let bar = " █ ";
+
+        let t = Table::new(
+            rows,
+            [
+                // + 1 is for padding.
+                Constraint::Min(20),
+                Constraint::Length(8),
+                Constraint::Length(8),
+                Constraint::Length(11),
+                Constraint::Min(40),
+            ],
+        )
+        .header(header)
+        .row_highlight_style(selected_row_style)
+        .column_highlight_style(selected_col_style)
+        .cell_highlight_style(selected_cell_style)
+        .highlight_symbol(Text::from(vec![
+            "".into(),
+            bar.into(),
+            bar.into(),
+            "".into(),
+        ]))
+        .bg(self.colors.buffer_bg)
+        .block(sb)
+        .highlight_spacing(HighlightSpacing::Always);
+
+        frame.render_stateful_widget(t, area, &mut self.state);
+    }
+
+    pub fn next_lvrow(&mut self) {
+        let i = match self.state.selected() {
+            Some(i) => {
+                if i >= self.lv_items.as_ref().unwrap().len() - 1 {
+                    0
+                } else {
+                    i + 1
+                }
+            }
+            None => 0,
+        };
+        self.state.select(Some(i));
+        self.scroll_state = self.scroll_state.position(i * ITEM_HEIGHT);
+    }
+
+    pub fn previous_lvrow(&mut self) {
+        let i = match self.state.selected() {
+            Some(i) => {
+                if i == 0 {
+                    self.lv_items.as_ref().unwrap().len() - 1
+                } else {
+                    i - 1
+                }
+            }
+            None => 0,
+        };
+        self.state.select(Some(i));
+        self.scroll_state = self.scroll_state.position(i * ITEM_HEIGHT);
+    }
+}
+
 struct App {
     state: TableState,
     items: Vec<VgTableData>,
@@ -108,6 +262,7 @@ struct App {
     view_type: ViewType,
     sel_vg_name: String,
     title: String,
+    vg_info_view: Option<VgInfoView>,
 }
 
 impl App {
@@ -186,6 +341,7 @@ impl App {
             view_type: ViewType::VgOverview,
             sel_vg_name: String::new(),
             title: String::from(TITLE),
+            vg_info_view: None,
         }
     }
 
@@ -245,6 +401,8 @@ impl App {
                         // if cell is "", nothing to act on
                         self.view_type = ViewType::VgInfo;
                         self.sel_vg_name = item.vg_name.clone();
+                        self.vg_info_view = Some(VgInfoView::new(&self.sel_vg_name));
+                        self.vg_info_view.as_mut().unwrap().fetch_data();
                     }
                     item.vg_name.clone()
                 }
@@ -274,12 +432,24 @@ impl App {
                             if self.view_type == ViewType::VgOverview {
                                 return Ok(());
                             } else {
-                                // to back to main view
+                                // go back to main view
                                 self.view_type = ViewType::VgOverview;
                             }
                         }
-                        KeyCode::Char('j') | KeyCode::Down => self.next_row(),
-                        KeyCode::Char('k') | KeyCode::Up => self.previous_row(),
+                        KeyCode::Char('j') | KeyCode::Down => {
+                            if self.view_type == ViewType::VgOverview {
+                                self.next_row();
+                            } else if self.view_type == ViewType::VgInfo {
+                                self.vg_info_view.as_mut().unwrap().next_lvrow();
+                            }
+                        }
+                        KeyCode::Char('k') | KeyCode::Up => {
+                            if self.view_type == ViewType::VgOverview {
+                                self.previous_row();
+                            } else if self.view_type == ViewType::VgInfo {
+                                self.vg_info_view.as_mut().unwrap().previous_lvrow();
+                            }
+                        }
                         KeyCode::Char('l') | KeyCode::Right => self.next_column(),
                         KeyCode::Char('h') | KeyCode::Left => self.previous_column(),
                         _ => {}
@@ -310,63 +480,26 @@ impl App {
             // inner layout to hold vginfo
             let inner_layout = &Layout::default()
                 .direction(Direction::Vertical)
-                .constraints(vec![Constraint::Percentage(25), Constraint::Percentage(75)])
+                .constraints(vec![Constraint::Length(8), Constraint::Min(10)])
                 .margin(1)
                 .split(outer_layout[0]);
-
             frame.render_widget(table_block, outer_layout[0]);
             self.render_vginfo(frame, inner_layout[0]);
-            self.render_lvs(frame, inner_layout[1]);            
+            let vg_view = self.vg_info_view.as_mut().unwrap();
+            vg_view.render_lvs_table(frame, inner_layout[1]);
+            vg_view.render_scrollbar(frame, inner_layout[1]);
         }
         self.render_footer(frame, outer_layout[1]);
     }
 
-    fn render_lvs(&mut self, frame: &mut Frame, area: Rect) {
-        let header_str = format!(
-            "{:<20} {:<8} {:<12} {:<8} {:<39}",
-            "LV", "Size(g)", "attr", "segtype", "uuid"
-        );
-        let vg_info_block = Block::default()
-            .border_style(Style::new().fg(self.colors.block_border))
-            .border_type(BorderType::Rounded)
-            .borders(Borders::ALL);
-
-        let mut lines = vec![
-            Line::raw(header_str)
-                .fg(self.colors.header_fg)
-                .bg(self.colors.header_bg),
-        ];
-
-        let lv_list = lvm::get_lvinfo_by_vg(&self.sel_vg_name, &lvm::get_lvs());
-        for lv_item in lv_list {
-            let gb_conv = 1000.0 * 1000.0 * 1000.0;
-            let line = format!(
-                "{:<20} {:<8.1} {:<12} {:<8} {:<39}",
-                lv_item.lv_name,
-                (lv_item.size as f64) / gb_conv,
-                lv_item.attr,
-                lv_item.segtype,
-                lv_item.uuid,
-            );
-            lines.push(Line::raw(line.clone()).fg(self.colors.header_fg));           
-        }
-       
-        // Render a paragraph with details of vg
-        let para = Paragraph::new(lines).block(vg_info_block).style(
-            Style::new()
-                .fg(self.colors.row_fg)
-                .bg(self.colors.buffer_bg),
-        );
-
-        frame.render_widget(para, area);
-    }
-
     fn render_vginfo(&mut self, frame: &mut Frame, area: Rect) {
+        let vginfo = self.vg_info_view.as_ref().unwrap();
+        let lvm_vg_data = vginfo.vg_item.as_ref().unwrap();
         let header_str = format!("{:<10} {:<20}", "Name", "Value");
-        let vg_info_block = Block::default()
-            .border_style(Style::new().fg(self.colors.block_border))
-            .border_type(BorderType::Rounded)
-            .borders(Borders::ALL);
+        //let vg_info_block = Block::default()
+        //    .border_style(Style::new().fg(self.colors.block_border))
+        //    .border_type(BorderType::Rounded)
+        //    .borders(Borders::ALL);
 
         let mut lines = vec![
             Line::raw(header_str)
@@ -374,33 +507,32 @@ impl App {
                 .bg(self.colors.header_bg),
         ];
 
-        let vginfo = lvm::get_vg_info(&self.sel_vg_name);
-        let line = format!("{:<10} {:<20}", "VG", vginfo.name);
+        let line = format!("{:<10} {:<20}", "VG", lvm_vg_data.name);
         lines.push(Line::raw(line).fg(self.colors.header_fg));
         let line = format!(
             "{:<10} {:<20}",
             "size (g)",
-            vginfo.size / 1000 / 1000 / 1000
+            lvm_vg_data.size / 1000 / 1000 / 1000
         );
         lines.push(Line::raw(line).fg(self.colors.header_fg));
         let line = format!(
             "{:<10} {:<20}",
             "free (g)",
-            vginfo.free / 1000 / 1000 / 1000
+            lvm_vg_data.free / 1000 / 1000 / 1000
         );
         lines.push(Line::raw(line).fg(self.colors.header_fg));
 
-        let used = vginfo.size - vginfo.free;
-        let used = (used as f64) / (vginfo.size as f64) * 100.0;
+        let used = lvm_vg_data.size - lvm_vg_data.free;
+        let used = (used as f64) / (lvm_vg_data.size as f64) * 100.0;
 
         let line = format!("{:<10} {:<20.1}", "%used", used);
         lines.push(Line::raw(line).fg(self.colors.header_fg));
 
-        let line = format!("{:<10} {:<20}", "pv_count", vginfo.pv_count);
+        let line = format!("{:<10} {:<20}", "pv_count", lvm_vg_data.pv_count);
         lines.push(Line::raw(line).fg(self.colors.header_fg));
 
         // Render a paragraph with details of vg
-        let para = Paragraph::new(lines).block(vg_info_block).style(
+        let para = Paragraph::new(lines).style(
             Style::new()
                 .fg(self.colors.row_fg)
                 .bg(self.colors.buffer_bg),

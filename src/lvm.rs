@@ -8,7 +8,6 @@ use std::{
     ptr,
 };
 
-
 // Include bindings generated from "wrapper.h
 include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 
@@ -23,7 +22,7 @@ pub struct Pv {
 }
 
 #[derive(Clone)]
-pub struct Lv {
+pub struct LvmLvData {
     pub lv_name: String,
     pub vg_name: String,
     pub size: u64, // bytes
@@ -135,8 +134,8 @@ pub fn get_pvs() -> Vec<Pv> {
     return pv_list;
 }
 
-pub fn get_lvs() -> Vec<Lv> {
-    let mut lv_list: Vec<Lv> = Vec::<Lv>::new();
+pub fn get_lvs() -> Vec<LvmLvData> {
+    let mut lv_list: Vec<LvmLvData> = Vec::<LvmLvData>::new();
 
     unsafe {
         let error: *mut *mut GError = ptr::null_mut();
@@ -148,7 +147,7 @@ pub fn get_lvs() -> Vec<Lv> {
 
         while !(*lvm_lv_arr).is_null() {
             let lvm_lv_data = *lvm_lv_arr;
-            let lv_item: Lv = Lv {
+            let lv_item: LvmLvData = LvmLvData {
                 lv_name: CStr::from_ptr((*lvm_lv_data).lv_name)
                     .to_str()
                     .unwrap()
@@ -194,7 +193,7 @@ pub fn find_pvs_by_vg(vg_name: &String, pv_list: &Vec<Pv>) -> Vec<String> {
     return pvs_in_vg_list;
 }
 
-pub fn find_lvs_by_vg(vg_name: &String, lv_list: &Vec<Lv>) -> Vec<String> {
+pub fn find_lvs_by_vg(vg_name: &String, lv_list: &Vec<LvmLvData>) -> Vec<String> {
     let mut lvs_in_vg_list = Vec::<String>::new();
 
     for lv_item in lv_list {
@@ -206,8 +205,8 @@ pub fn find_lvs_by_vg(vg_name: &String, lv_list: &Vec<Lv>) -> Vec<String> {
     return lvs_in_vg_list;
 }
 
-pub fn get_lvinfo_by_vg(vg_name: &String, lv_list: &Vec<Lv>) -> Vec<Lv> {
-    let mut lvs_in_vg_list = Vec::<Lv>::new();
+pub fn get_lvinfo_by_vg(vg_name: &String, lv_list: &Vec<LvmLvData>) -> Vec<LvmLvData> {
+    let mut lvs_in_vg_list = Vec::<LvmLvData>::new();
 
     for lv_item in lv_list {
         if vg_name.eq(&lv_item.vg_name) {
