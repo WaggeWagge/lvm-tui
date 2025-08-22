@@ -10,6 +10,8 @@ fn main() {
         .header("wrapper.h")
         .clang_arg("-I/usr/include/glib-2.0")
         .clang_arg("-I/usr/lib/x86_64-linux-gnu/glib-2.0/include")
+        .clang_arg("-I/usr/lib64/glib-2.0/include")
+        .clang_arg("-I/usr/include/sysprof-6")
         .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()))
         .generate()
         .expect("Unable to generate bindings");
