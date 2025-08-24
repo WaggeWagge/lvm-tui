@@ -2,9 +2,15 @@ use std::rc::Rc;
 
 use color_eyre::Result;
 use ratatui::{
-    crossterm::event::{self, Event, KeyCode, KeyEventKind}, layout::{self, Constraint, Direction, Layout, Margin, Rect}, style::{self, Color, Modifier, Style, Stylize}, text::{Line, Text}, widgets::{
-        Block, BorderType, Borders, Cell, Gauge, HighlightSpacing, Paragraph, Row, Scrollbar, ScrollbarOrientation, ScrollbarState, Table, TableState
-    }, DefaultTerminal, Frame
+    DefaultTerminal, Frame,
+    crossterm::event::{self, Event, KeyCode, KeyEventKind},
+    layout::{self, Constraint, Direction, Layout, Margin, Rect},
+    style::{self, Color, Modifier, Style, Stylize},
+    text::{Line, Text},
+    widgets::{
+        Block, BorderType, Borders, Cell, Gauge, HighlightSpacing, Paragraph, Row, Scrollbar,
+        ScrollbarOrientation, ScrollbarState, Table, TableState,
+    },
 };
 use style::palette::tailwind;
 use unicode_width::UnicodeWidthStr;
@@ -108,17 +114,16 @@ impl VgInfoView {
         self.lv_items = Some(lvm::get_lvinfo_by_vg(&self.vg_name, &lvm::get_lvs()));
     }
 
-    fn render(&mut self, frame: &mut Frame, inner_layout: &Rc::<[Rect]>) {       
-            use Constraint::{Length, Min};      
-            let vg_info_layout = Layout::horizontal([Length(30), Min(0)])
-                .horizontal_margin(1);  
+    fn render(&mut self, frame: &mut Frame, inner_layout: &Rc<[Rect]>) {
+        use Constraint::{Length, Min};
+        let vg_info_layout = Layout::horizontal([Length(30), Min(0)]).horizontal_margin(1);
 
-            let [vg_info_area, gbar_area] = vg_info_layout.areas(inner_layout[0]);
-            self.render_vginfo(frame, vg_info_area);
-            self.render_vginfo_usagebar(frame, gbar_area);
+        let [vg_info_area, gbar_area] = vg_info_layout.areas(inner_layout[0]);
+        self.render_vginfo(frame, vg_info_area);
+        self.render_vginfo_usagebar(frame, gbar_area);
 
-            self.render_lvs_table(frame, inner_layout[1]);
-            self.render_scrollbar(frame, inner_layout[1]);            
+        self.render_lvs_table(frame, inner_layout[1]);
+        self.render_scrollbar(frame, inner_layout[1]);
     }
 
     fn render_scrollbar(&mut self, frame: &mut Frame, area: Rect) {
@@ -135,32 +140,39 @@ impl VgInfoView {
         );
     }
 
-    fn render_vginfo_usagebar(&mut self, frame: &mut Frame, area: Rect) {       
+    fn render_vginfo_usagebar(&mut self, frame: &mut Frame, area: Rect) {
         let lvm_vg_data = self.vg_item.as_ref().unwrap();
         let used = lvm_vg_data.size - lvm_vg_data.free;
         let used = (used as f64) / (lvm_vg_data.size as f64) * 100.0;
         let used = used as u16;
 
-        use Constraint::{Length};      
+        use Constraint::Length;
         let layout = Layout::vertical([Length(5)]).vertical_margin(1);
-        let [ gbar_area] = layout.areas(area);       
+        let [gbar_area] = layout.areas(area);
 
         let bar_title = format!(" VG: {} ", self.vg_name);
-                // Render a paragraph 
+        // Render a paragraph
         let bar = Gauge::default()
-        .block(Block::default()
-            .border_style(Style::new().fg(self.colors.block_border))
-            .title(bar_title)
-            .border_type(BorderType::Rounded)
-            .borders(Borders::ALL))        
-        .gauge_style(Style::new().fg(self.colors.selected_row_style_fg).on_black().italic())
-        .percent(used);    
-        frame.render_widget(bar, gbar_area);    
+            .block(
+                Block::default()
+                    .border_style(Style::new().fg(self.colors.block_border))
+                    .title(bar_title)
+                    .border_type(BorderType::Rounded)
+                    .borders(Borders::ALL),
+            )
+            .gauge_style(
+                Style::new()
+                    .fg(self.colors.selected_row_style_fg)
+                    .on_black()
+                    .italic(),
+            )
+            .percent(used);
+        frame.render_widget(bar, gbar_area);
     }
 
     fn render_vginfo(&mut self, frame: &mut Frame, area: Rect) {
         let lvm_vg_data = self.vg_item.as_ref().unwrap();
-        let header_str = format!("{:<10} {:<20}", "Name", "Value");       
+        let header_str = format!("{:<10} {:<20}", "Name", "Value");
 
         let mut lines = vec![
             Line::raw(header_str)
@@ -540,7 +552,7 @@ impl LvmApp {
                 .margin(1)
                 .split(outer_layout[0]);
             frame.render_widget(table_block, outer_layout[0]);
-            let vg_view = self.vg_info_view.as_mut().unwrap();          
+            let vg_view = self.vg_info_view.as_mut().unwrap();
             vg_view.render(frame, inner_layout);
         }
         self.render_footer(frame, outer_layout[1]);
