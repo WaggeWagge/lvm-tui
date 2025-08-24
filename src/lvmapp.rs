@@ -14,6 +14,7 @@ use ratatui::{
 };
 use style::palette::tailwind;
 use unicode_width::UnicodeWidthStr;
+use Constraint::{Length, Min};
 
 use crate::lvm::{self, LvmLvData, LvmVgData};
 
@@ -114,8 +115,9 @@ impl VgInfoView {
         self.lv_items = Some(lvm::get_lvinfo_by_vg(&self.vg_name, &lvm::get_lvs()));
     }
 
-    fn render(&mut self, frame: &mut Frame, inner_layout: &Rc<[Rect]>) {
-        use Constraint::{Length, Min};
+    fn render(&mut self, frame: &mut Frame, inner_layout: &[Rect; 3]) {
+       
+        
         let vg_info_layout = Layout::horizontal([Length(30), Min(0)]).horizontal_margin(1);
 
         let [vg_info_area, gbar_area] = vg_info_layout.areas(inner_layout[0]);
@@ -124,6 +126,11 @@ impl VgInfoView {
 
         self.render_lvs_table(frame, inner_layout[1]);
         self.render_scrollbar(frame, inner_layout[1]);
+        let sb = Block::default()
+            .border_style(Style::new().fg(self.colors.block_border))
+            .border_type(BorderType::Rounded)
+            .borders(Borders::ALL);
+        frame.render_widget(sb, inner_layout[2]);
     }
 
     fn render_scrollbar(&mut self, frame: &mut Frame, area: Rect) {
@@ -546,14 +553,16 @@ impl LvmApp {
             self.render_scrollbar(frame, outer_layout[0]);
         } else if self.view_type == ViewType::VgInfo {
             // inner layout to hold vginfo
-            let inner_layout = &Layout::default()
-                .direction(Direction::Vertical)
-                .constraints(vec![Constraint::Length(8), Constraint::Min(10)])
-                .margin(1)
-                .split(outer_layout[0]);
+            let inner_layout = &Layout::vertical([Length(8), Min(15), Min(5)]).margin(1);
+            //let inner_layout = &Layout::default()
+            //    .direction(Direction::Vertical)
+            //    .constraints(vec![Constraint::Length(8), Constraint::Min(10)])
+            //    .margin(1)
+            //    .split(outer_layout[0]);
+            let vg_info_layout: [Rect; 3] = inner_layout.areas(outer_layout[0]);
             frame.render_widget(table_block, outer_layout[0]);
             let vg_view = self.vg_info_view.as_mut().unwrap();
-            vg_view.render(frame, inner_layout);
+            vg_view.render(frame, &vg_info_layout);
         }
         self.render_footer(frame, outer_layout[1]);
     }
