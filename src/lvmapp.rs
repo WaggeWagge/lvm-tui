@@ -1,5 +1,6 @@
 use std::rc::Rc;
 
+use Constraint::{Length, Min};
 use color_eyre::Result;
 use ratatui::{
     DefaultTerminal, Frame,
@@ -14,7 +15,6 @@ use ratatui::{
 };
 use style::palette::tailwind;
 use unicode_width::UnicodeWidthStr;
-use Constraint::{Length, Min};
 
 use crate::lvm::{self, LvmLvData, LvmVgData};
 
@@ -116,8 +116,6 @@ impl VgInfoView {
     }
 
     fn render(&mut self, frame: &mut Frame, inner_layout: &[Rect; 3]) {
-       
-        
         let vg_info_layout = Layout::horizontal([Length(30), Min(0)]).horizontal_margin(1);
 
         let [vg_info_area, gbar_area] = vg_info_layout.areas(inner_layout[0]);
@@ -130,7 +128,7 @@ impl VgInfoView {
             .border_style(Style::new().fg(self.colors.block_border))
             .border_type(BorderType::Rounded)
             .borders(Borders::ALL);
-        frame.render_widget(sb, inner_layout[2]);
+        self.render_lvs_pvs(frame, inner_layout[2]);
     }
 
     fn render_scrollbar(&mut self, frame: &mut Frame, area: Rect) {
@@ -145,6 +143,44 @@ impl VgInfoView {
             }),
             &mut self.scroll_state,
         );
+    }
+
+    fn render_lvs_pvs(&mut self, frame: &mut Frame, area: Rect) {
+        // get the selected lv.
+        let i = match self.state.selected() {
+            Some(i) => i,
+            None => 0,
+        };
+
+        let sel_lv_item = self.lv_items.as_ref().unwrap().get(i).unwrap();
+        let mut lines = Vec::<Line>::new();
+        for seg in &sel_lv_item.lvSegs {
+            let line = format!(
+                "pvdev={:<10} start_seg={:<10} seg_size={:<10}",
+                seg.pvdev, seg.pv_start_pe, seg.size_pe
+            );
+            lines.push(
+                Line::raw(line)
+                    .fg(self.colors.row_fg)
+                    .bg(self.colors.buffer_bg),
+            );
+        }
+        // Render a paragraph with details of vg
+        let para = Paragraph::new(lines)
+            .style(
+                Style::new()
+                    .fg(self.colors.row_fg)
+                    .bg(self.colors.buffer_bg),
+            )
+            .block(
+                Block::default()
+                    .title(&*sel_lv_item.lv_name)
+                    .border_style(Style::new().fg(self.colors.block_border))
+                    .border_type(BorderType::Rounded)
+                    .borders(Borders::ALL),
+            );
+
+        frame.render_widget(para, area);
     }
 
     fn render_vginfo_usagebar(&mut self, frame: &mut Frame, area: Rect) {

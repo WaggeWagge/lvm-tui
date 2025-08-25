@@ -29,14 +29,14 @@ pub struct LvmLvData {
     pub attr: String,
     pub segtype: String,
     pub uuid: String,
-    pub lvSegs: Vec::<LvmlvSegData>,
+    pub lvSegs: Vec<LvmlvSegData>,
 }
 
 #[derive(Clone)]
 pub struct LvmlvSegData {
     pub pvdev: String,
     pub pv_start_pe: u64,
-    size_pe: u64,
+    pub size_pe: u64,
 }
 
 pub struct LvmVgData {
@@ -147,7 +147,8 @@ pub fn get_lvs() -> Vec<LvmLvData> {
 
     unsafe {
         let error: *mut *mut GError = ptr::null_mut();
-        let mut lvm_lv_arr = bd_lvm_lvs(ptr::null_mut(), error);
+
+        let mut lvm_lv_arr = bd_lvm_lvs_tree(ptr::null_mut(), error);
 
         if lvm_lv_arr.is_null() {
             return lv_list;
@@ -177,7 +178,7 @@ pub fn get_lvs() -> Vec<LvmLvData> {
                     .to_str()
                     .unwrap()
                     .to_string(),
-                lvSegs:  conv_lv_segs((*lvm_lv_data).segs),
+                lvSegs: conv_lv_segs((*lvm_lv_data).segs),
             };
 
             lv_list.push(lv_item);
@@ -191,7 +192,7 @@ pub fn get_lvs() -> Vec<LvmLvData> {
 
 pub fn conv_lv_segs(mut segs_arr: *mut *mut BDLVMSEGdata) -> Vec<LvmlvSegData> {
     let mut segs_list: Vec<LvmlvSegData> = Vec::<LvmlvSegData>::new();
-   
+
     if segs_arr.is_null() {
         return segs_list;
     }
@@ -200,17 +201,17 @@ pub fn conv_lv_segs(mut segs_arr: *mut *mut BDLVMSEGdata) -> Vec<LvmlvSegData> {
         while !(*segs_arr).is_null() {
             let lvm_lv_segdata = *segs_arr;
             let seg_item: LvmlvSegData = LvmlvSegData {
-                pvdev : CStr::from_ptr((*lvm_lv_segdata).pvdev)
-                        .to_str()
-                        .unwrap()
-                        .to_string(),
-                pv_start_pe : (*lvm_lv_segdata).pv_start_pe,
-                size_pe : (*lvm_lv_segdata).size_pe,
+                pvdev: CStr::from_ptr((*lvm_lv_segdata).pvdev)
+                    .to_str()
+                    .unwrap()
+                    .to_string(),
+                pv_start_pe: (*lvm_lv_segdata).pv_start_pe,
+                size_pe: (*lvm_lv_segdata).size_pe,
             };
             segs_list.push(seg_item);
-            //bd_lvm_segdata_free(data);            
+            //bd_lvm_segdata_free(lvm_lv_segdata); Free not needed it seams, taken care of "owner:s free"
             segs_arr = segs_arr.add(1);
-        }        
+        }
     }
 
     return segs_list;
