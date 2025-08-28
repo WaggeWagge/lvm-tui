@@ -29,5 +29,4 @@ package = "lvm-tui"
 [package.metadata.rpm.cargo]
 buildflags = ["--release"]
 
-[package.metadata.rpm.targets]
-lvm-tui" = { path = "/usr/bin/lvm-tui" }
+
