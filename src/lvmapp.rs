@@ -1,7 +1,5 @@
-use std::rc::Rc;
-
 use Constraint::{Length, Min};
-use color_eyre::{owo_colors::OwoColorize, Result};
+use color_eyre::Result;
 use ratatui::{
     DefaultTerminal, Frame,
     crossterm::event::{self, Event, KeyCode, KeyEventKind},
@@ -88,49 +86,6 @@ enum ViewType {
     LvNew,
 }
 
-struct LvNew {
-    state: TableState,
-    vg_name: String,
-    colors: TableColors,
-}
-
-impl LvNew {
-    fn new(vg_name: &String) -> Self {
-        Self {
-            state: TableState::default()
-                .with_selected(0)
-                .with_selected_cell((0, 0)),
-            vg_name: vg_name.clone(),
-            colors: TableColors::new(&PALETTES[0]),
-        }
-    }
-
-    fn render(&mut self, frame: &mut Frame, outer_layout: &Rect) {
-        let inner_layout = &Layout::vertical([Length(8)]).margin(1);
-        let lv_new_layout: [Rect; 1] = inner_layout.areas(*outer_layout);
-
-        let block1 = Block::default()
-            .border_style(Style::new().fg(self.colors.block_border))
-            .bg(self.colors.buffer_bg)
-            .borders(Borders::ALL);
-
-        // Render a table to hold lables and input.
-        let rows = [
-            Row::new(vec!["Lv name:", ""]),
-            Row::new(vec!["value xx", ""]),
-        ];
-        
-        let t = Table::default()
-            .bg(self.colors.buffer_bg)
-            .block(block1)
-            .fg(self.colors.selected_column_style_fg)
-            .highlight_spacing(HighlightSpacing::Always)
-            .rows(rows);       
-
-        frame.render_stateful_widget(t, lv_new_layout[0], &mut self.state);
-    }
-}
-
 struct VgInfoView {
     state: TableState,
     vg_name: String,
@@ -168,10 +123,7 @@ impl VgInfoView {
 
         self.render_lvs_table(frame, inner_layout[1]);
         self.render_scrollbar(frame, inner_layout[1]);
-        let sb = Block::default()
-            .border_style(Style::new().fg(self.colors.block_border))
-            .border_type(BorderType::Rounded)
-            .borders(Borders::ALL);
+
         self.render_lvs_pvs(frame, inner_layout[2]);
     }
 
@@ -302,6 +254,12 @@ impl VgInfoView {
     }
 
     fn render_lvs_table(&mut self, frame: &mut Frame, area: Rect) {
+        // sort lv data,
+        self.lv_items
+            .as_deref_mut()
+            .unwrap()
+            .sort_by_key(|item| (item.lv_name).clone());
+
         let sb = Block::default()
             .border_style(Style::new().fg(self.colors.block_border))
             .border_type(BorderType::Rounded)
@@ -422,7 +380,6 @@ pub struct LvmApp {
     sel_vg_name: String,
     title: String,
     vg_info_view: Option<VgInfoView>,
-    lv_new_view: Option<LvNew>,
 }
 
 impl LvmApp {
@@ -502,7 +459,6 @@ impl LvmApp {
             sel_vg_name: String::new(),
             title: String::from(TITLE),
             vg_info_view: None,
-            lv_new_view: None,
         }
     }
 
@@ -610,11 +566,6 @@ impl LvmApp {
                             }
                             KeyCode::Char('j') | KeyCode::Down => vg_info_view.next_lvrow(),
                             KeyCode::Char('k') | KeyCode::Up => vg_info_view.previous_lvrow(),
-                            KeyCode::Char('N') => {
-                               // self.view_type = ViewType::LvNew;
-                               // self.lv_new_view = Some(LvNew::new(&self.sel_vg_name));
-                               todo!()
-                            }
                             _ => {}
                         }
                     }
@@ -652,10 +603,6 @@ impl LvmApp {
             frame.render_widget(table_block, outer_layout[0]);
             let vg_view = self.vg_info_view.as_mut().unwrap();
             vg_view.render(frame, &vg_info_layout);
-        } else if self.view_type == ViewType::LvNew {
-            let lv_new_view = self.lv_new_view.as_mut().unwrap();
-            frame.render_widget(table_block, outer_layout[0]);
-            lv_new_view.render(frame, &outer_layout[0]);
         }
         self.render_footer(frame, outer_layout[1]);
     }
