@@ -611,8 +611,9 @@ impl LvmApp {
                             KeyCode::Char('j') | KeyCode::Down => vg_info_view.next_lvrow(),
                             KeyCode::Char('k') | KeyCode::Up => vg_info_view.previous_lvrow(),
                             KeyCode::Char('N') => {
-                                self.view_type = ViewType::LvNew;
-                                self.lv_new_view = Some(LvNew::new(&self.sel_vg_name));
+                               // self.view_type = ViewType::LvNew;
+                               // self.lv_new_view = Some(LvNew::new(&self.sel_vg_name));
+                               todo!()
                             }
                             _ => {}
                         }
