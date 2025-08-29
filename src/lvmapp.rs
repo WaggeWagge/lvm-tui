@@ -298,8 +298,8 @@ impl VgInfoView {
                 let item: [&str; 5] = [
                     &data.lv_name,
                     &size_gb,
-                    &data.segtype,
                     &data.attr,
+                    &data.segtype,                    
                     &data.uuid,
                 ];
                 item.into_iter()
