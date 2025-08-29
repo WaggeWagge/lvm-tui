@@ -3,7 +3,7 @@ use color_eyre::Result;
 use ratatui::{
     DefaultTerminal, Frame,
     crossterm::event::{self, Event, KeyCode, KeyEventKind},
-    layout::{self, Constraint, Direction, Layout, Margin, Rect},
+    layout::{Constraint, Layout, Margin, Rect},
     style::{self, Color, Modifier, Style, Stylize},
     text::{Line, Text},
     widgets::{
@@ -150,7 +150,7 @@ impl VgInfoView {
 
         let sel_lv_item = self.lv_items.as_ref().unwrap().get(i).unwrap();
         let mut lines = Vec::<Line>::new();
-        for seg in &sel_lv_item.lvSegs {
+        for seg in &sel_lv_item.lv_segs {
             let line = format!(
                 "pvdev={:<10} start_seg={:<10} seg_size={:<10}",
                 seg.pvdev, seg.pv_start_pe, seg.size_pe

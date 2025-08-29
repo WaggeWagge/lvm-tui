@@ -1,15 +1,23 @@
-#![allow(non_upper_case_globals)]
-#![allow(non_camel_case_types)]
-#![allow(non_snake_case)]
-#![allow(improper_ctypes)]
-
 use std::{
     ffi::{CStr, CString},
     ptr,
 };
 
-// Include bindings generated from "wrapper.h
-include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
+use crate::lvm::lvmbind::{
+    BDLVMSEGdata, GError, bd_lvm_init, bd_lvm_lvdata_free, bd_lvm_lvs_tree, bd_lvm_pvdata_free,
+    bd_lvm_pvs, bd_lvm_vgdata_free, bd_lvm_vginfo, bd_lvm_vgs,
+};
+
+mod lvmbind {
+    #![allow(unsafe_op_in_unsafe_fn)]
+    #![allow(non_upper_case_globals)]
+    #![allow(non_camel_case_types)]
+    #![allow(non_snake_case)]
+    #![allow(improper_ctypes)]
+    #![allow(unsafe_code)]
+    #![allow(dead_code)]
+    include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
+}
 
 pub struct NameValue {
     pub name: String,
@@ -29,7 +37,7 @@ pub struct LvmLvData {
     pub attr: String,
     pub segtype: String,
     pub uuid: String,
-    pub lvSegs: Vec<LvmlvSegData>,
+    pub lv_segs: Vec<LvmlvSegData>,
 }
 
 #[derive(Clone)]
@@ -178,7 +186,7 @@ pub fn get_lvs() -> Vec<LvmLvData> {
                     .to_str()
                     .unwrap()
                     .to_string(),
-                lvSegs: conv_lv_segs((*lvm_lv_data).segs),
+                lv_segs: conv_lv_segs((*lvm_lv_data).segs),
             };
 
             lv_list.push(lv_item);
@@ -209,7 +217,6 @@ pub fn conv_lv_segs(mut segs_arr: *mut *mut BDLVMSEGdata) -> Vec<LvmlvSegData> {
                 size_pe: (*lvm_lv_segdata).size_pe,
             };
             segs_list.push(seg_item);
-            //bd_lvm_segdata_free(lvm_lv_segdata); Free not needed it seams, taken care of "owner:s free"
             segs_arr = segs_arr.add(1);
         }
     }

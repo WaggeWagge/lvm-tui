@@ -4,10 +4,9 @@
 pub mod lvm;
 pub mod lvmapp;
 
-use color_eyre::{Result};
+use color_eyre::Result;
 
 fn main() -> Result<()> {
-   
     if !lvm::init() {
         panic!("Failed to scan blockdevs");
     }
