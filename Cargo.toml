@@ -21,7 +21,7 @@ bindgen = "0.71.0"
 section = "unknown"
 revision = "1"
 changelog = "debian/changelog"
-depends = "libblockdev-lvm3, libblockdev3, libglib2.0"
+depends = "libblockdev-lvm3, libblockdev3"
 
 [package.metadata.rpm]
 package = "lvm-tui"
