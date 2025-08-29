@@ -19,7 +19,7 @@ bindgen = "0.71.0"
 
 [package.metadata.deb]
 section = "unknown"
-revision = "1"
+revision = "2"
 changelog = "debian/changelog"
 depends = "libblockdev-lvm3, libblockdev3"
 
