@@ -479,7 +479,7 @@ impl LvmApp {
             let lvs_in_vg: Vec<String> = lvm::find_lvs_by_vg(&vg_name, &lv_list);
             for lv_name in lvs_in_vg {
                 // Go though existing rows, if find space i.e. "", update row,
-                // if no empty lv_names ramaining, add new row.
+                // if no empty lv_names remaining, add new row.
                 if !rows.last().unwrap().lv_name.eq("") {
                     // Add new
                     let row: VgTableData = VgTableData {
@@ -610,7 +610,7 @@ impl LvmApp {
         }
     }
 
-    // Handle events for the whole app. Also responsible for init of construction of 'views'.    
+    // Handle events for the whole app. Also responsible for init of 'views'.    
     pub fn run(mut self, mut terminal: DefaultTerminal) -> Result<()> {
         loop {
             terminal.draw(|frame| self.draw(frame))?;
