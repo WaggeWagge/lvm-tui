@@ -1,5 +1,6 @@
-use Constraint::{Length, Min};
-use color_eyre::Result;
+use Constraint::{Length, Max, Min};
+use color_eyre::{Result, owo_colors::OwoColorize};
+use crossterm::event::KeyModifiers;
 use ratatui::{
     DefaultTerminal, Frame,
     crossterm::event::{self, Event, KeyCode, KeyEventKind},
@@ -8,7 +9,7 @@ use ratatui::{
     text::{Line, Text},
     widgets::{
         Block, BorderType, Borders, Cell, Gauge, HighlightSpacing, Paragraph, Row, Scrollbar,
-        ScrollbarOrientation, ScrollbarState, Table, TableState,
+        ScrollbarOrientation, ScrollbarState, Table, TableState, Wrap,
     },
 };
 use style::palette::tailwind;
@@ -84,6 +85,77 @@ enum ViewType {
     VgOverview,
     VgInfo,
     LvNew,
+}
+
+struct LvNewView {
+    vg_name: String,
+    lvname: String,
+    lvsize: String,
+    lvsegtype: String,
+    pv_devs: Vec<String>,
+    colors: TableColors,
+}
+
+impl LvNewView {
+    fn new(vg_name: &String) -> Self {
+        Self {
+            colors: TableColors::new(&PALETTES[0]),
+            lvname: String::from(""),
+            lvsize: String::from(""),
+            pv_devs: Vec::<String>::new(),
+            vg_name: vg_name.clone(),
+            lvsegtype: String::from(""),
+        }
+    }
+
+    fn render(&mut self, frame: &mut Frame, rect: &Rect) {
+        let inner_layout = &Layout::vertical([Max(1), Max(1), Max(1)]).margin(2);
+        let [lvname_area, lvsize_area, yyy] = inner_layout.areas(*rect);
+        let h_layout = &Layout::horizontal([Length(10), Max(15)]).horizontal_margin(1);
+
+        let title = self.vg_name.clone() + ": new Logical Volumne ";
+        let sb = Block::default()
+            .border_style(Style::new().fg(self.colors.block_border))
+            .border_type(BorderType::Rounded)
+            .title(title)
+            .borders(Borders::ALL);
+
+        let [label_area, input_area] = h_layout.areas(lvname_area);
+        let label_lvname = "lvname:";
+        let para_label = Paragraph::new(label_lvname)
+            .centered()
+            .alignment(ratatui::layout::Alignment::Left)
+            .style(Style::new().fg(self.colors.row_fg));
+        let para_input = Paragraph::new(self.lvname.clone())
+            .centered()
+            .alignment(ratatui::layout::Alignment::Left)
+            .style(
+                Style::new()
+                    .fg(self.colors.header_bg)
+                    .underline_color(self.colors.header_bg)
+                    .add_modifier(Modifier::UNDERLINED),
+            );
+        frame.render_widget(para_label, label_area);
+        frame.render_widget(para_input, input_area);
+
+        let [label_area, input_area] = h_layout.areas(lvsize_area);
+        let label_lvsize = "size:";
+        let para_label = Paragraph::new(label_lvsize)
+            .centered()
+            .alignment(ratatui::layout::Alignment::Left)
+            .style(Style::new().fg(self.colors.row_fg));
+        let para_input = Paragraph::new(self.lvsize.clone())
+            .centered()
+            .alignment(ratatui::layout::Alignment::Left)
+            .style(
+                Style::new()
+                    .fg(self.colors.header_bg)
+                    .underline_color(self.colors.header_bg)
+                    .add_modifier(Modifier::UNDERLINED),
+            );
+        frame.render_widget(para_label, label_area);
+        frame.render_widget(para_input, input_area);
+    }
 }
 
 struct VgInfoView {
@@ -299,7 +371,7 @@ impl VgInfoView {
                     &data.lv_name,
                     &size_gb,
                     &data.attr,
-                    &data.segtype,                    
+                    &data.segtype,
                     &data.uuid,
                 ];
                 item.into_iter()
@@ -380,6 +452,7 @@ pub struct LvmApp {
     sel_vg_name: String,
     title: String,
     vg_info_view: Option<VgInfoView>,
+    lv_new_view: Option<LvNewView>,
 }
 
 impl LvmApp {
@@ -459,6 +532,7 @@ impl LvmApp {
             sel_vg_name: String::new(),
             title: String::from(TITLE),
             vg_info_view: None,
+            lv_new_view: None,
         }
     }
 
@@ -536,6 +610,7 @@ impl LvmApp {
         }
     }
 
+    // Handle events for the whole app. Also responsible for init of construction of 'views'.    
     pub fn run(mut self, mut terminal: DefaultTerminal) -> Result<()> {
         loop {
             terminal.draw(|frame| self.draw(frame))?;
@@ -566,6 +641,12 @@ impl LvmApp {
                             }
                             KeyCode::Char('j') | KeyCode::Down => vg_info_view.next_lvrow(),
                             KeyCode::Char('k') | KeyCode::Up => vg_info_view.previous_lvrow(),
+                            KeyCode::Char('n') => {
+                                if key.modifiers == KeyModifiers::CONTROL {
+                                    self.view_type = ViewType::LvNew;
+                                    self.lv_new_view = Some(LvNewView::new(&self.sel_vg_name));
+                                }
+                            }
                             _ => {}
                         }
                     }
@@ -581,6 +662,8 @@ impl LvmApp {
         }
     }
 
+    // Draws widgets and views depending on view type.
+    // Data needed (in self) expected to have been initialized beforhand in e.g. run (handleEvent)
     fn draw(&mut self, frame: &mut Frame) {
         let vertical = &Layout::vertical([Constraint::Min(5), Constraint::Length(3)]);
         let outer_layout = vertical.split(frame.area());
@@ -603,7 +686,12 @@ impl LvmApp {
             frame.render_widget(table_block, outer_layout[0]);
             let vg_view = self.vg_info_view.as_mut().unwrap();
             vg_view.render(frame, &vg_info_layout);
+        } else if self.view_type == ViewType::LvNew {
+            let lv_new_view = self.lv_new_view.as_mut().unwrap();
+            frame.render_widget(table_block, outer_layout[0]);
+            lv_new_view.render(frame, &outer_layout[0]);
         }
+
         self.render_footer(frame, outer_layout[1]);
     }
 
