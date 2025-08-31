@@ -1,7 +1,7 @@
 # lvm-tui
-Lvm tui/gui written in rust/ratatui. Very basic atm, read-only/listin existing LV/VG/PVs.
+Lvm tui/gui written in rust/ratatui (https://ratatui.rs/). Read-only/listing existing LV/VG/PVs.
 
-<img width="698" height="695" alt="image" src="https://github.com/user-attachments/assets/790b8077-a3b9-4db6-8f9f-df850b443a52" />
+<img width="654" height="613" alt="image" src="https://github.com/user-attachments/assets/c2d7d906-25ee-4d03-b6d5-8c65edd87a8e" />
 
 Build and run
 ================
