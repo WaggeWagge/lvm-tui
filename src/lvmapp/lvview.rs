@@ -1,14 +1,10 @@
 use crossterm::event::KeyEvent;
 use ratatui::{
     Frame,
-    crossterm::event::{ KeyCode, KeyEventKind},
+    crossterm::event::{KeyCode, KeyEventKind},
     layout::{Constraint, Layout, Position, Rect},
     style::{Modifier, Style, Stylize},
- 
-    widgets::{
-        Block, BorderType, Borders, Paragraph,
-      
-    },
+    widgets::{Block, BorderType, Borders, Paragraph},
 };
 
 use Constraint::{Length, Max};

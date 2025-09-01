@@ -11,7 +11,6 @@ pub const INFO_TEXT: [&str; 1] =
     ["(Esc|q) quit | (↑) move up | (↓) move down | (←) move left | (→) move right"];
 
 pub const TITLE: &str = " LVM-TUI ";
-
 pub const ITEM_HEIGHT: usize = 1;
 
 pub struct Colors {

@@ -1,5 +1,5 @@
-pub mod res;
 pub mod lvview;
+pub mod res;
 
 use std::char;
 
@@ -20,8 +20,9 @@ use ratatui::{
 
 use unicode_width::UnicodeWidthStr;
 
-use crate::{    
-    lvm::{self, LvmLvData, LvmVgData}, lvmapp::res::Colors,
+use crate::{
+    lvm::{self, LvmLvData, LvmVgData},
+    lvmapp::res::Colors,
 };
 
 struct VgTableData {
@@ -48,7 +49,6 @@ enum ViewType {
     VgInfo,
     LvNew,
 }
-
 
 struct VgInfoView {
     state: TableState,
@@ -536,7 +536,8 @@ impl LvmApp {
                             KeyCode::Char('n') => {
                                 if key.modifiers == KeyModifiers::CONTROL {
                                     self.view_type = ViewType::LvNew;
-                                    self.lv_new_view = Some(lvview::LvNewView::new(&self.sel_vg_name));
+                                    self.lv_new_view =
+                                        Some(lvview::LvNewView::new(&self.sel_vg_name));
                                 }
                             }
                             _ => {}
