@@ -1,68 +1,28 @@
+pub mod res;
+pub mod lvview;
+
 use std::char;
 
 use Constraint::{Length, Max, Min};
-use color_eyre::{Result, owo_colors::OwoColorize};
-use crossterm::event::KeyModifiers;
+use color_eyre::{Result, eyre::Ok};
+use crossterm::event::{KeyEvent, KeyModifiers};
 use ratatui::{
     DefaultTerminal, Frame,
     crossterm::event::{self, Event, KeyCode, KeyEventKind},
     layout::{Constraint, Layout, Margin, Position, Rect},
-    style::{self, Color, Modifier, Style, Styled, Stylize},
+    style::{Modifier, Style, Stylize},
     text::{Line, Text},
     widgets::{
         Block, BorderType, Borders, Cell, Gauge, HighlightSpacing, Paragraph, Row, Scrollbar,
         ScrollbarOrientation, ScrollbarState, Table, TableState,
     },
 };
-use style::palette::tailwind;
+
 use unicode_width::UnicodeWidthStr;
 
-use crate::lvm::{self, LvmLvData, LvmVgData};
-
-const PALETTES: [tailwind::Palette; 4] = [
-    tailwind::CYAN,
-    tailwind::EMERALD,
-    tailwind::INDIGO,
-    tailwind::SLATE,
-];
-const INFO_TEXT: [&str; 1] =
-    ["(Esc) quit | (↑) move up | (↓) move down | (←) move left | (→) move right"];
-
-const TITLE: &str = " LVM-TUI ";
-
-const ITEM_HEIGHT: usize = 1;
-
-struct Colors {
-    block_border: Color,
-    buffer_bg: Color,
-    header_bg: Color,
-    header_fg: Color,
-    row_fg: Color,
-    selected_row_style_fg: Color,
-    selected_column_style_fg: Color,
-    selected_cell_style_fg: Color,
-    normal_row_color: Color,
-    alt_row_color: Color,
-    footer_border_color: Color,
-}
-
-impl Colors {
-    const fn new(color: &tailwind::Palette) -> Self {
-        Self {
-            block_border: color.c400,
-            buffer_bg: tailwind::SLATE.c950,
-            header_bg: color.c900,
-            header_fg: tailwind::SLATE.c200,
-            row_fg: tailwind::SLATE.c200,
-            selected_row_style_fg: color.c400,
-            selected_column_style_fg: color.c400,
-            selected_cell_style_fg: color.c600,
-            normal_row_color: tailwind::SLATE.c950,
-            alt_row_color: tailwind::SLATE.c900,
-            footer_border_color: color.c400,
-        }
-    }
-}
+use crate::{    
+    lvm::{self, LvmLvData, LvmVgData}, lvmapp::res::Colors,
+};
 
 struct VgTableData {
     vg_name: String,
@@ -89,116 +49,6 @@ enum ViewType {
     LvNew,
 }
 
-#[derive(PartialEq)]
-enum Focus {
-    LvName = 0,
-    LvSize,
-}
-
-struct LvNewView {
-    focus: Focus,
-    vg_name: String,
-    lvname: String,
-
-    lvsize: String,
-    lvsegtype: String,
-    pv_devs: Vec<String>,
-    colors: Colors,
-}
-
-impl LvNewView {
-    fn new(vg_name: &String) -> Self {
-        Self {
-            focus: Focus::LvName,
-            colors: Colors::new(&PALETTES[0]),
-            lvname: String::from(""),
-            lvsize: String::from(""),
-            pv_devs: Vec::<String>::new(),
-            vg_name: vg_name.clone(),
-            lvsegtype: String::from(""),
-        }
-    }
-
-    fn next_focus(&mut self) {
-        match self.focus {
-            Focus::LvName => self.focus = Focus::LvSize,
-            Focus::LvSize => self.focus = Focus::LvName,
-        }
-    }
-
-    fn prev_focus(&mut self) {
-        match self.focus {
-            Focus::LvName => self.focus = Focus::LvSize,
-            Focus::LvSize => self.focus = Focus::LvName,
-        }
-    }
-
-    fn append(&mut self, char: &char) {
-        match self.focus {
-            Focus::LvName => self.lvname.push(*char),
-            Focus::LvSize => self.lvsize.push(*char),
-        }
-    }
-
-    fn style_input(&mut self) -> Style {
-        Style::new()
-            .fg(self.colors.header_bg)
-            .underline_color(self.colors.header_bg)
-            .add_modifier(Modifier::UNDERLINED)
-    }
-
-    fn render(&mut self, frame: &mut Frame, rect: &Rect) {
-        let inner_layout = &Layout::vertical([Max(1), Max(1), Max(1)]).margin(2);
-        let [lvname_area, lvsize_area, yyy] = inner_layout.areas(*rect);
-        let h_layout = &Layout::horizontal([Length(10), Max(15)]).horizontal_margin(1);
-
-        let title = self.vg_name.clone() + ": new Logical Volumne ";
-        let sb = Block::default()
-            .border_style(Style::new().fg(self.colors.block_border))
-            .border_type(BorderType::Rounded)
-            .title(title)
-            .borders(Borders::ALL);
-
-        let [label_area, input_area] = h_layout.areas(lvname_area);
-        let para_label = Paragraph::new("lvname:")
-            .centered()
-            .alignment(ratatui::layout::Alignment::Left)
-            .style(Style::new().fg(self.colors.row_fg));
-        let para_input =
-            Paragraph::new(self.lvname.clone().fg(self.colors.selected_column_style_fg))
-                .centered()
-                .alignment(ratatui::layout::Alignment::Left)
-                .style(self.style_input());
-
-        frame.render_widget(para_label, label_area);
-        frame.render_widget(para_input, input_area);
-        if self.focus == Focus::LvName {
-            frame.set_cursor_position(Position::new(
-                input_area.x + (self.lvname.len() as u16),
-                input_area.y,
-            ));
-        }
-
-        let [label_area, input_area] = h_layout.areas(lvsize_area);
-        let para_label = Paragraph::new("size:")
-            .centered()
-            .alignment(ratatui::layout::Alignment::Left)
-            .style(Style::new().fg(self.colors.row_fg));
-        let para_input =
-            Paragraph::new(self.lvsize.clone().fg(self.colors.selected_column_style_fg))
-                .centered()
-                .alignment(ratatui::layout::Alignment::Left)
-                .style(self.style_input());
-        frame.render_widget(para_label, label_area);
-        frame.render_widget(para_input, input_area);
-        if self.focus == Focus::LvSize {
-            frame.set_cursor_position(Position::new(
-                input_area.x + (self.lvsize.len() as u16),
-                input_area.y,
-            ));
-        }
-    }
-}
 
 struct VgInfoView {
     state: TableState,
@@ -217,7 +67,7 @@ impl VgInfoView {
                 .with_selected(0)
                 .with_selected_cell((0, 0)),
             scroll_state: ScrollbarState::new(15),
-            colors: Colors::new(&PALETTES[0]),
+            colors: Colors::new(&res::PALETTES[0]),
             vg_item: None,
             lv_items: None,
         }
@@ -464,7 +314,7 @@ impl VgInfoView {
             None => 0,
         };
         self.state.select(Some(i));
-        self.scroll_state = self.scroll_state.position(i * ITEM_HEIGHT);
+        self.scroll_state = self.scroll_state.position(i * res::ITEM_HEIGHT);
     }
 
     pub fn previous_lvrow(&mut self) {
@@ -479,7 +329,7 @@ impl VgInfoView {
             None => 0,
         };
         self.state.select(Some(i));
-        self.scroll_state = self.scroll_state.position(i * ITEM_HEIGHT);
+        self.scroll_state = self.scroll_state.position(i * res::ITEM_HEIGHT);
     }
 }
 
@@ -494,7 +344,7 @@ pub struct LvmApp {
     sel_vg_name: String,
     title: String,
     vg_info_view: Option<VgInfoView>,
-    lv_new_view: Option<LvNewView>,
+    lv_new_view: Option<lvview::LvNewView>,
 }
 
 impl LvmApp {
@@ -556,9 +406,9 @@ impl LvmApp {
 
         let initial_cnt_len = match vgs.len() {
             // dont * with 0
-            0 => ITEM_HEIGHT,
-            1 => ITEM_HEIGHT,
-            _ => (vgs.len() - 1) * ITEM_HEIGHT,
+            0 => res::ITEM_HEIGHT,
+            1 => res::ITEM_HEIGHT,
+            _ => (vgs.len() - 1) * res::ITEM_HEIGHT,
         };
 
         Self {
@@ -567,12 +417,12 @@ impl LvmApp {
                 .with_selected_cell((0, 0)),
             vgd_longest_item_lens: constraint_len_calculator(&vgs),
             scroll_state: ScrollbarState::new(initial_cnt_len),
-            colors: Colors::new(&PALETTES[0]),
+            colors: Colors::new(&res::PALETTES[0]),
             color_index: 0,
             items: vgs,
             view_type: ViewType::VgOverview,
             sel_vg_name: String::new(),
-            title: String::from(TITLE),
+            title: String::from(res::TITLE),
             vg_info_view: None,
             lv_new_view: None,
         }
@@ -590,7 +440,7 @@ impl LvmApp {
             None => 0,
         };
         self.state.select(Some(i));
-        self.scroll_state = self.scroll_state.position(i * ITEM_HEIGHT);
+        self.scroll_state = self.scroll_state.position(i * res::ITEM_HEIGHT);
     }
 
     pub fn previous_row(&mut self) {
@@ -605,7 +455,7 @@ impl LvmApp {
             None => 0,
         };
         self.state.select(Some(i));
-        self.scroll_state = self.scroll_state.position(i * ITEM_HEIGHT);
+        self.scroll_state = self.scroll_state.position(i * res::ITEM_HEIGHT);
     }
 
     pub fn next_column(&mut self) {
@@ -617,7 +467,7 @@ impl LvmApp {
     }
 
     pub fn set_colors(&mut self) {
-        self.colors = Colors::new(&PALETTES[self.color_index]);
+        self.colors = Colors::new(&res::PALETTES[self.color_index]);
     }
 
     pub fn acton_cell(&mut self) {
@@ -686,7 +536,7 @@ impl LvmApp {
                             KeyCode::Char('n') => {
                                 if key.modifiers == KeyModifiers::CONTROL {
                                     self.view_type = ViewType::LvNew;
-                                    self.lv_new_view = Some(LvNewView::new(&self.sel_vg_name));
+                                    self.lv_new_view = Some(lvview::LvNewView::new(&self.sel_vg_name));
                                 }
                             }
                             _ => {}
@@ -696,11 +546,10 @@ impl LvmApp {
                     let lv_new_view = self.lv_new_view.as_mut().unwrap();
                     if key.kind == KeyEventKind::Press {
                         match key.code {
-                            KeyCode::Char('q') | KeyCode::Esc => self.view_type = ViewType::VgInfo,
-                            KeyCode::Tab => lv_new_view.next_focus(),
-                            KeyCode::BackTab => lv_new_view.prev_focus(),
-                            KeyCode::Char(to_insert) => lv_new_view.append(&to_insert),
-                            _ => (),
+                            KeyCode::Char('q') | KeyCode::Esc => self.view_type = ViewType::VgInfo, // "back"
+                            _ => {
+                                lv_new_view.handle_events(&key);
+                            }
                         }
                     }
                 }
@@ -823,7 +672,7 @@ impl LvmApp {
     }
 
     fn render_footer(&self, frame: &mut Frame, area: Rect) {
-        let info_footer = Paragraph::new(Text::from_iter(INFO_TEXT))
+        let info_footer = Paragraph::new(Text::from_iter(res::INFO_TEXT))
             .style(
                 Style::new()
                     .fg(self.colors.row_fg)
