@@ -1,18 +1,14 @@
 use ratatui::{
     Frame,
-    crossterm::event::{KeyCode, KeyEventKind},
-    layout::{Constraint, Layout, Margin, Position, Rect},
+    layout::{Constraint, Layout, Margin, Rect},
     style::{Modifier, Style, Stylize},
-    symbols::block,
     text::{Line, Text},
     widgets::{
-        Block, BorderType, Borders, Cell, Gauge, HighlightSpacing, Padding, Paragraph, Row,
-        Scrollbar, ScrollbarOrientation, ScrollbarState, Table, TableState, Widget, Wrap,
+        Block, BorderType, Borders, Cell, Gauge, HighlightSpacing, Paragraph, Row,
+        Scrollbar, ScrollbarOrientation, ScrollbarState, Table, TableState,
     },
 };
-use tui_widget_list::{ListBuilder, ListState, ListView, ScrollAxis};
-
-use Constraint::{Length, Max, Min};
+use Constraint::{Length, Min};
 
 use crate::{
     lvm::{self, LvmLvData, LvmVgData},
