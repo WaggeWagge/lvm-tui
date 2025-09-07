@@ -24,7 +24,7 @@ pub struct NameValue {
     pub value: String,
 }
 
-pub struct Pv {
+pub struct LvmPVData {
     pub pv_name: String,
     pub vg_name: String,
 }
@@ -117,8 +117,8 @@ pub fn get_vgs() -> Vec<String> {
     return vg_list;
 }
 
-pub fn get_pvs() -> Vec<Pv> {
-    let mut pv_list: Vec<Pv> = Vec::<Pv>::new();
+pub fn get_pvs() -> Vec<LvmPVData> {
+    let mut pv_list: Vec<LvmPVData> = Vec::<LvmPVData>::new();
 
     unsafe {
         let error: *mut *mut GError = ptr::null_mut();
@@ -130,7 +130,7 @@ pub fn get_pvs() -> Vec<Pv> {
 
         while !(*lvm_pv_arr).is_null() {
             let lvm_pv_data = *lvm_pv_arr;
-            let pv_item: Pv = Pv {
+            let pv_item: LvmPVData = LvmPVData {
                 pv_name: CStr::from_ptr((*lvm_pv_data).pv_name)
                     .to_str()
                     .unwrap()
@@ -225,7 +225,7 @@ pub fn conv_lv_segs(mut segs_arr: *mut *mut BDLVMSEGdata) -> Vec<LvmlvSegData> {
 }
 
 // Convinient functions
-pub fn find_pvs_by_vg(vg_name: &String, pv_list: &Vec<Pv>) -> Vec<String> {
+pub fn find_pvs_by_vg(vg_name: &String, pv_list: &Vec<LvmPVData>) -> Vec<String> {
     let mut pvs_in_vg_list = Vec::<String>::new();
 
     for pv_item in pv_list {

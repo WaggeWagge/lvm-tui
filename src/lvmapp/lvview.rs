@@ -42,7 +42,9 @@ enum Focus {
     LvName = 0,
     LvSize,
     LvSizeOpt,
-    LvSegType,
+    LvSegType,    
+    LvPvAv,
+    LvPvSel,
 }
 
 struct InputField {
@@ -56,13 +58,16 @@ pub struct LvNewView {
     lvname: InputField,
     lvsize: InputField,
     lvsize_opt_state: ListState,
-    lvsegtype_state: ListState,    
-    pv_devs: Vec<String>,
+    lvsegtype_state: ListState,           
+    pv_devs_avail: Vec<String>,
+    pv_devs_selected: Vec<String>,
+    sel_list_state: ListState,
+    avail_list_state: ListState,
     colors: Colors,
 }
 
 impl LvNewView {
-    pub fn new(vg_name: &String) -> Self {
+    pub fn new(vg_name: &String, pvdev_names: &Vec<String>) -> Self {
         Self {
             focus: Focus::LvName,
             colors: Colors::new(&res::PALETTES[0]),
@@ -77,9 +82,12 @@ impl LvNewView {
                 pos: 0,
             },
             lvsize_opt_state: ListState::default(),
-            pv_devs: Vec::<String>::new(),
+            sel_list_state: ListState::default(),
+            avail_list_state: ListState::default(),         
             vg_name: vg_name.clone(),
             lvsegtype_state: ListState::default(),
+            pv_devs_avail: pvdev_names.to_vec(),
+            pv_devs_selected: Vec::new(),
         }
     }
 
@@ -88,16 +96,51 @@ impl LvNewView {
             Focus::LvName => self.focus = Focus::LvSize,
             Focus::LvSize => self.focus = Focus::LvSizeOpt,
             Focus::LvSizeOpt => self.focus = Focus::LvSegType,
-            Focus::LvSegType => self.focus = Focus::LvName,
+            Focus::LvSegType => {
+                if self.pv_devs_avail.len() > 0 {
+                    self.focus = Focus::LvPvAv;
+                } else if self.pv_devs_selected.len() > 0 {
+                    self.focus = Focus::LvPvSel;
+                } else {
+                    self.focus = Focus::LvName;
+                }
+            },
+            Focus::LvPvAv => {
+                // if nothing selected, no point ...
+                if self.pv_devs_selected.len() < 1 {
+                    self.focus = Focus::LvName;
+                } else {
+                    self.focus = Focus::LvPvSel;
+                }
+            },
+            Focus::LvPvSel => self.focus = Focus::LvName,
         }
     }
 
     fn prev_focus(&mut self) {
         match self.focus {
-            Focus::LvName => self.focus = Focus::LvSegType,
+            Focus::LvName => {
+                // if nothing select in PvSel no point
+                if self.pv_devs_selected.len() > 0 {
+                    self.focus = Focus::LvPvSel;
+                } else if self.pv_devs_avail.len() > 0 {
+                    self.focus = Focus::LvPvAv;
+                } else {
+                    self.focus = Focus::LvSegType;
+                }
+            },
             Focus::LvSize => self.focus = Focus::LvName,
             Focus::LvSizeOpt => self.focus = Focus::LvSize,
             Focus::LvSegType => self.focus = Focus::LvSizeOpt,
+            Focus::LvPvAv => self.focus = Focus::LvSegType,
+            Focus::LvPvSel => {
+                // if nothing to select in PvAl, no point
+                if self.pv_devs_avail.len() < 1 {
+                    self.focus = Focus::LvSegType;
+                } else {
+                    self.focus = Focus::LvPvAv;
+                }
+            },
         }
     }
 
@@ -193,6 +236,26 @@ impl LvNewView {
         }
     }
 
+    fn move_availpv(&mut self) {        
+        if self.avail_list_state.selected.is_none() || self.pv_devs_avail.len() < 1{
+            return;
+        } 
+        let select_index = self.avail_list_state.selected.unwrap();
+        // pop/remove from avail list, push to selected.
+        let pv_item = self.pv_devs_avail.remove(select_index);
+        self.pv_devs_selected.push(pv_item);
+    }
+
+    fn move_selpv(&mut self) {
+         if self.sel_list_state.selected.is_none() || self.pv_devs_selected.len() < 1{
+            return;
+        } 
+        let select_index = self.sel_list_state.selected.unwrap();
+        // pop/remove from avail list, push to selected.
+        let pv_item = self.pv_devs_selected.remove(select_index);
+        self.pv_devs_avail.push(pv_item);
+    }
+
     fn style_input(&mut self) -> Style {
         Style::new()
             .fg(self.colors.header_bg)
@@ -207,11 +270,18 @@ impl LvNewView {
                     KeyCode::Tab => self.next_focus(),
                     KeyCode::BackTab => self.prev_focus(),
                     KeyCode::Backspace => self.remove(),
+                    KeyCode::Char(' ') => { 
+                        match self.focus {                            
+                            Focus::LvPvAv => self.move_availpv(),
+                            Focus::LvPvSel => self.move_selpv(),
+                            _ => {} ,
+                        }
+                    },
                     KeyCode::Char(to_insert) => {
                         let c = to_insert;
                         match self.focus {
                             Focus::LvSize => {
-                                if c >= '0' && c <= '9' {
+                                if c >= '0' && c <= '9' || c =='.' {
                                     self.insert(&to_insert);
                                 }
                             }
@@ -230,7 +300,7 @@ impl LvNewView {
                     KeyCode::Right => self.right(),
                     KeyCode::Left => self.left(),
                     KeyCode::Down => self.down(),
-                    KeyCode::Up => self.up(),
+                    KeyCode::Up => self.up(),                
                     _ => {}
                 }
             }
@@ -238,7 +308,7 @@ impl LvNewView {
     }
 
     fn render_size_opt(&mut self, frame: &mut Frame, rect: &mut Rect) {
-        let size_opts = ["M", "G", "T"];
+        let size_opts = ["M", "G", "%FREE", "%VG", "T"];
         rect.height = 1;
         let list_style = match self.focus {
             // IF we have focus, highlight
@@ -338,6 +408,7 @@ impl LvNewView {
             Length(1),
             Max(1),
             Max(1),
+            Max(1),
             Max(2),
             Length(1),
             Length(10),
@@ -346,6 +417,7 @@ impl LvNewView {
         .margin(2);
         let [
             header_area,
+            vgname_area,
             lvname_area,
             lvsize_area,
             lvtype_area,
@@ -360,6 +432,19 @@ impl LvNewView {
                                                            //.add_modifier(Modifier::UNDERLINED)
             );
         frame.render_widget(para_heading, header_area);
+
+        let h_layout = &Layout::horizontal([Length(8), Max(26)])
+            .horizontal_margin(1)
+            .spacing(1);
+        let [label_area, val_area] = h_layout.areas(vgname_area);
+        let para_vgl = Paragraph::new("vgname:")
+            .alignment(ratatui::layout::Alignment::Left)
+            .style(Style::new().fg(self.colors.row_fg));
+        let para_vgv = Paragraph::new(self.vg_name.clone())
+            .alignment(ratatui::layout::Alignment::Left)
+            .style(Style::new().fg(self.colors.header_bg));
+        frame.render_widget(para_vgl, label_area);
+        frame.render_widget(para_vgv, val_area);
 
         let h_layout = &Layout::horizontal([Length(8), Max(26), Length(4)])
             .horizontal_margin(1)
@@ -388,7 +473,7 @@ impl LvNewView {
         }
 
         // Redefine layout for next input row
-        let h_layout = &Layout::horizontal([Length(8), Max(8), Length(4)])
+        let h_layout = &Layout::horizontal([Length(8), Max(8), Length(7)])
             .horizontal_margin(1)
             .spacing(1);
         let [mut label_area, mut input_area, mut option_area] = h_layout.areas(lvsize_area);
@@ -423,7 +508,7 @@ impl LvNewView {
         frame.render_widget(para_label, label_area);       
         self.render_segtype_opt(frame, &mut option_area);
 
-        let para_sel = Paragraph::new("Select PVs (O):")
+        let para_sel = Paragraph::new("Select PVs new LV will use (Optional):")
             .alignment(ratatui::layout::Alignment::Left)
             .style(Style::new().fg(self.colors.block_border));
         frame.render_widget(para_sel, pv_sel_label);
@@ -438,30 +523,74 @@ impl LvNewView {
         }
     }
 
+    // List are rendered based on pv_devs_avail and self.pv_devs_avail.
     fn render_pvsel(&mut self, frame: &mut Frame, rect: &Rect) {
         let h_layout = &Layout::horizontal([Max(15), Max(15)])
             .horizontal_margin(1)
             .spacing(1);
-        let [sel_pv_area, avail_pv_area] = h_layout.areas(*rect);
+        let [ avail_pv_area, sel_pv_area] = h_layout.areas(*rect);
 
-        let para_sel = Paragraph::new("xxx1:")
-            .centered()
-            .block(
-                Block::bordered()
-                    .border_type(BorderType::Plain)
-                    .border_style(Style::new().fg(self.colors.header_bg)),
-            )
-            .style(Style::new().fg(self.colors.row_fg));
-        frame.render_widget(para_sel, sel_pv_area);
+        // Render available list
+        let avail_builder = ListBuilder::new(|context| {
+            let mut item = ListItem::new(self.pv_devs_avail[context.index].clone());           
+            let main_axis_size = 1;
+            if context.is_selected && self.focus == Focus::LvPvAv{
+                item.style = Style::new().bg(self.colors.header_bg).fg(self.colors.selected_column_style_fg);
+            } else {
+                item.style = Style::new().fg(self.colors.selected_column_style_fg);
+            }
+            (item, main_axis_size)
+        });
 
-        let para_avail = Paragraph::new("xxx2:")
-            .centered()
-            .block(
-                Block::bordered()
-                    .border_type(BorderType::Plain)
-                    .border_style(Style::new().fg(self.colors.header_bg)),
-            )
-            .style(Style::new().fg(self.colors.row_fg));
-        frame.render_widget(para_avail, avail_pv_area);
+        let border_style = match self.focus {
+            Focus::LvPvAv => Style::new().fg(self.colors.block_border),
+            _ => Style::new().fg(self.colors.header_bg),
+        };
+        let block = Block::bordered().padding(Padding::horizontal(1))
+            .border_type(BorderType::Plain)
+            .title("available")
+            .border_style(border_style);         
+        let avail_count = self.pv_devs_avail.len();      
+        let avail_list = ListView::new(avail_builder, avail_count)
+            .scroll_axis(ScrollAxis::Vertical)
+            .block(block)
+            .infinite_scrolling(true);
+        let avail_state = &mut self.avail_list_state;     
+        if avail_state.selected.is_none() {
+            avail_state.select(Some(0));            
+        }
+
+        frame.render_stateful_widget(avail_list, avail_pv_area, avail_state);
+
+        // Render selected pvs.
+        let sel_builder = ListBuilder::new(|context| {
+            let mut item = ListItem::new(self.pv_devs_selected[context.index].clone());       
+             if context.is_selected && self.focus == Focus::LvPvSel{
+                item.style = Style::new().bg(self.colors.header_bg).fg(self.colors.selected_column_style_fg);
+            } else {
+                item.style = Style::new().fg(self.colors.selected_column_style_fg);
+            }    
+            let main_axis_size = 1;
+            (item, main_axis_size)
+        });
+        let border_style = match self.focus {
+            Focus::LvPvSel => Style::new().fg(self.colors.block_border),
+            _ => Style::new().fg(self.colors.header_bg),
+        };
+        let block = Block::bordered().padding(Padding::horizontal(1))
+            .border_type(BorderType::Plain)
+            .title("selected")
+            .border_style(border_style);         
+        let sel_count = self.pv_devs_selected.len();      
+        let sel_list = ListView::new(sel_builder, sel_count)
+            .scroll_axis(ScrollAxis::Vertical)
+            .block(block)
+            .infinite_scrolling(true);
+        let sel_state = &mut self.sel_list_state;    
+        if sel_state.selected.is_none() {
+            sel_state.select(Some(0));            
+        }
+
+        frame.render_stateful_widget(sel_list, sel_pv_area, sel_state);
     }
 }

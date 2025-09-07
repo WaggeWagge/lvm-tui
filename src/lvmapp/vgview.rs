@@ -20,6 +20,7 @@ pub struct VgInfoView {
     vg_name: String,
     vg_item: Option<LvmVgData>,
     lv_items: Option<Vec<LvmLvData>>,
+    pub pvdev_list: Option<Vec<String>>,
     scroll_state: ScrollbarState,
     colors: Colors,
 }
@@ -35,12 +36,14 @@ impl VgInfoView {
             colors: Colors::new(&res::PALETTES[0]),
             vg_item: None,
             lv_items: None,
+            pvdev_list: None,
         }
     }
 
     pub fn fetch_data(&mut self) {
         self.vg_item = Some(lvm::get_vg_info(&self.vg_name));
         self.lv_items = Some(lvm::get_lvinfo_by_vg(&self.vg_name, &lvm::get_lvs()));
+        self.pvdev_list = Some(lvm::find_pvs_by_vg(&self.vg_name, &lvm::get_pvs()));
     }
 
     pub fn render(&mut self, frame: &mut Frame, inner_layout: &[Rect; 3]) {

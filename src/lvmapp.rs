@@ -254,7 +254,8 @@ impl LvmApp {
                                 if key.modifiers == KeyModifiers::CONTROL {
                                     self.view_type = ViewType::LvNew;
                                     self.lv_new_view =
-                                        Some(lvview::LvNewView::new(&self.sel_vg_name));
+                                        Some(lvview::LvNewView::new(&self.sel_vg_name, 
+                                            vg_info_view.pvdev_list.as_mut().unwrap()));
                                 }
                             }
                             _ => {}
