@@ -4,7 +4,7 @@ use ratatui::{
     buffer::Buffer,
     crossterm::event::{KeyCode, KeyEventKind},
     layout::{Constraint, Layout, Position, Rect},
-    style::{Modifier, Style, Stylize},    
+    style::{Modifier, Style, Stylize},
     text::{Line, Text},
     widgets::{Block, BorderType, Padding, Paragraph, Widget, Wrap},
 };
@@ -42,7 +42,7 @@ enum Focus {
     LvName = 0,
     LvSize,
     LvSizeOpt,
-    LvSegType,    
+    LvSegType,
     LvPvAv,
     LvPvSel,
 }
@@ -58,9 +58,9 @@ pub struct LvNewView<'a> {
     lvname: InputField,
     lvsize: InputField,
     lvsize_opt_state: ListState,
-    lvsegtype_state: ListState, 
-    lvsegtype_opts : [&'a str; 5],   
-    nrdevs: InputField,       
+    lvsegtype_state: ListState,
+    lvsegtype_opts: [&'a str; 5],
+    nrdevs: InputField,
     pv_devs_avail: Vec<String>,
     pv_devs_selected: Vec<String>,
     sel_list_state: ListState,
@@ -68,7 +68,7 @@ pub struct LvNewView<'a> {
     colors: Colors,
 }
 
-impl <'a>LvNewView <'a> {
+impl<'a> LvNewView<'a> {
     pub fn new(vg_name: &String, pvdev_names: &Vec<String>) -> Self {
         Self {
             focus: Focus::LvName,
@@ -83,14 +83,14 @@ impl <'a>LvNewView <'a> {
                 value: String::from(""),
                 pos: 0,
             },
-            nrdevs: InputField { 
-                len_max: 4, 
-                value: String::from("1"), 
-                pos: 0, 
+            nrdevs: InputField {
+                len_max: 4,
+                value: String::from("1"),
+                pos: 0,
             },
             lvsize_opt_state: ListState::default(),
             sel_list_state: ListState::default(),
-            avail_list_state: ListState::default(),         
+            avail_list_state: ListState::default(),
             vg_name: vg_name.clone(),
             lvsegtype_state: ListState::default(),
             pv_devs_avail: pvdev_names.to_vec(),
@@ -112,7 +112,7 @@ impl <'a>LvNewView <'a> {
                 } else {
                     self.focus = Focus::LvName;
                 }
-            },
+            }
             Focus::LvPvAv => {
                 // if nothing selected, no point ...
                 if self.pv_devs_selected.len() < 1 {
@@ -120,7 +120,7 @@ impl <'a>LvNewView <'a> {
                 } else {
                     self.focus = Focus::LvPvSel;
                 }
-            },
+            }
             Focus::LvPvSel => self.focus = Focus::LvName,
         }
     }
@@ -136,7 +136,7 @@ impl <'a>LvNewView <'a> {
                 } else {
                     self.focus = Focus::LvSegType;
                 }
-            },
+            }
             Focus::LvSize => self.focus = Focus::LvName,
             Focus::LvSizeOpt => self.focus = Focus::LvSize,
             Focus::LvSegType => self.focus = Focus::LvSizeOpt,
@@ -148,7 +148,7 @@ impl <'a>LvNewView <'a> {
                 } else {
                     self.focus = Focus::LvPvAv;
                 }
-            },
+            }
         }
     }
 
@@ -244,10 +244,10 @@ impl <'a>LvNewView <'a> {
         }
     }
 
-    fn move_availpv(&mut self) {        
-        if self.avail_list_state.selected.is_none() || self.pv_devs_avail.len() < 1{
+    fn move_availpv(&mut self) {
+        if self.avail_list_state.selected.is_none() || self.pv_devs_avail.len() < 1 {
             return;
-        } 
+        }
         let select_index = self.avail_list_state.selected.unwrap();
         // pop/remove from avail list, push to selected.
         let pv_item = self.pv_devs_avail.remove(select_index);
@@ -255,9 +255,9 @@ impl <'a>LvNewView <'a> {
     }
 
     fn move_selpv(&mut self) {
-         if self.sel_list_state.selected.is_none() || self.pv_devs_selected.len() < 1{
+        if self.sel_list_state.selected.is_none() || self.pv_devs_selected.len() < 1 {
             return;
-        } 
+        }
         let select_index = self.sel_list_state.selected.unwrap();
         // pop/remove from avail list, push to selected.
         let pv_item = self.pv_devs_selected.remove(select_index);
@@ -278,18 +278,16 @@ impl <'a>LvNewView <'a> {
                     KeyCode::Tab => self.next_focus(),
                     KeyCode::BackTab => self.prev_focus(),
                     KeyCode::Backspace => self.remove(),
-                    KeyCode::Char(' ') => { 
-                        match self.focus {                            
-                            Focus::LvPvAv => self.move_availpv(),
-                            Focus::LvPvSel => self.move_selpv(),
-                            _ => {} ,
-                        }
+                    KeyCode::Char(' ') => match self.focus {
+                        Focus::LvPvAv => self.move_availpv(),
+                        Focus::LvPvSel => self.move_selpv(),
+                        _ => {}
                     },
                     KeyCode::Char(to_insert) => {
                         let c = to_insert;
                         match self.focus {
                             Focus::LvSize => {
-                                if c >= '0' && c <= '9' || c =='.' {
+                                if c >= '0' && c <= '9' || c == '.' {
                                     self.insert(&to_insert);
                                 }
                             }
@@ -308,7 +306,7 @@ impl <'a>LvNewView <'a> {
                     KeyCode::Right => self.right(),
                     KeyCode::Left => self.left(),
                     KeyCode::Down => self.down(),
-                    KeyCode::Up => self.up(),                
+                    KeyCode::Up => self.up(),
                     _ => {}
                 }
             }
@@ -320,7 +318,9 @@ impl <'a>LvNewView <'a> {
         rect.height = 1;
         let list_style = match self.focus {
             // IF we have focus, highlight
-            Focus::LvSizeOpt => Style::new().bg(self.colors.header_bg).fg(self.colors.selected_column_style_fg),
+            Focus::LvSizeOpt => Style::new()
+                .bg(self.colors.header_bg)
+                .fg(self.colors.selected_column_style_fg),
             _ => {
                 // set rect v size to 1,
                 rect.height = 1;
@@ -356,14 +356,13 @@ impl <'a>LvNewView <'a> {
         frame.render_widget(Text::from("▾").style(list_style).right_aligned(), *rect);
     }
 
-     fn render_segtype_opt(&mut self, frame: &mut Frame, rect: &mut Rect) {
-      
+    fn render_segtype_opt(&mut self, frame: &mut Frame, rect: &mut Rect) {
         rect.height = 1;
         let list_style = match self.focus {
             // IF we have focus, highlight
-            Focus::LvSegType => {                
-                Style::new().bg(self.colors.header_bg).fg(self.colors.selected_column_style_fg)              
-            }
+            Focus::LvSegType => Style::new()
+                .bg(self.colors.header_bg)
+                .fg(self.colors.selected_column_style_fg),
             _ => {
                 // set rect v size to 1,
                 rect.height = 1;
@@ -374,7 +373,7 @@ impl <'a>LvNewView <'a> {
         };
 
         let builder = ListBuilder::new(|context| {
-            let mut item = ListItem::new( self.lvsegtype_opts[context.index]);
+            let mut item = ListItem::new(self.lvsegtype_opts[context.index]);
             if context.is_selected {
                 item.style = Style::new().fg(self.colors.selected_cell_style_fg);
             }
@@ -399,7 +398,6 @@ impl <'a>LvNewView <'a> {
         frame.render_widget(Text::from("▾").style(list_style).right_aligned(), *rect);
     }
 
-
     fn render_info(&mut self, frame: &mut Frame, rect: &Rect) {
         let block = Block::default();
         let para_label = Paragraph::new(Text::from_iter(C_LVM_INFO_TEXT))
@@ -422,7 +420,7 @@ impl <'a>LvNewView <'a> {
             Length(1),
             Length(10),
             Max(2),
-        ])        
+        ])
         .margin(2);
         let [
             header_area,
@@ -518,14 +516,14 @@ impl <'a>LvNewView <'a> {
         let para_label = Paragraph::new("type:")
             .centered()
             .alignment(ratatui::layout::Alignment::Left)
-            .style(Style::new().fg(self.colors.row_fg));           
+            .style(Style::new().fg(self.colors.row_fg));
         label_area.height = 1;
         input_area.height = 1;
-        frame.render_widget(para_label, label_area);       
+        frame.render_widget(para_label, label_area);
         self.render_segtype_opt(frame, &mut option_area);
 
-        // Number of devices, depending of selected seg type, stripe/raid0, mirror/raid1, raid5.       
-        self.draw_segtype_opts(frame,  &mut lvtype_options_area);
+        // Number of devices, depending of selected seg type, stripe/raid0, mirror/raid1, raid5.
+        self.draw_segtype_opts(frame, &mut lvtype_options_area);
 
         let para_sel = Paragraph::new("Select PVs new LV will use (Optional):")
             .alignment(ratatui::layout::Alignment::Left)
@@ -534,24 +532,19 @@ impl <'a>LvNewView <'a> {
         self.render_pvsel(frame, &mut pv_sel_area);
 
         self.render_info(frame, &info_area);
-       
     }
 
-    fn render_segtype_raid(&mut self, frame: &mut Frame, rect: &Rect) {    
+    fn render_segtype_raid(&mut self, frame: &mut Frame, rect: &Rect) {
+        let v_layout = &Layout::vertical([Length(1), Length(1)]);
 
-        let v_layout = &Layout::vertical([
-            Length(1),
-            Length(1),            
-        ]);                
-        
-        let [
-            nr_str_area,
-            str_size_area,
-        ] = v_layout.areas(*rect);
+        let [nr_str_area, str_size_area] = v_layout.areas(*rect);
 
-        let h_layout = &Layout::horizontal([Length(("Nr of stripes/PV:".len()+1).try_into().unwrap() ), Max(4)])
-            .horizontal_margin(1)
-            .spacing(1);
+        let h_layout = &Layout::horizontal([
+            Length(("Nr of stripes/PV:".len() + 1).try_into().unwrap()),
+            Max(4),
+        ])
+        .horizontal_margin(1)
+        .spacing(1);
         let [label_area, input_area] = h_layout.areas(nr_str_area);
         let para_label = Paragraph::new("Nr of stripes/PV:")
             .alignment(ratatui::layout::Alignment::Left)
@@ -564,8 +557,8 @@ impl <'a>LvNewView <'a> {
         )
         .alignment(ratatui::layout::Alignment::Left)
         .style(self.style_input());
-        frame.render_widget(para_label, label_area); 
-        frame.render_widget(para_input, input_area); 
+        frame.render_widget(para_label, label_area);
+        frame.render_widget(para_input, input_area);
 
         let [label_area, input_area] = h_layout.areas(str_size_area);
         let para_label = Paragraph::new("stripe size:")
@@ -579,24 +572,21 @@ impl <'a>LvNewView <'a> {
         )
         .alignment(ratatui::layout::Alignment::Left)
         .style(self.style_input());
-        frame.render_widget(para_label, label_area); 
+        frame.render_widget(para_label, label_area);
         frame.render_widget(para_input, input_area);
     }
 
-     fn render_segtype_mirror(&mut self, frame: &mut Frame, rect: &Rect) {
-         let v_layout = &Layout::vertical([
-            Length(1),
-            Length(1),            
-        ]);                
-        
-        let [
-            nr_str_area,
-            str_size_area,
-        ] = v_layout.areas(*rect);
+    fn render_segtype_mirror(&mut self, frame: &mut Frame, rect: &Rect) {
+        let v_layout = &Layout::vertical([Length(1), Length(1)]);
 
-        let h_layout = &Layout::horizontal([Length(("Nr of mirrors:".len()+1).try_into().unwrap() ), Max(4)])
-            .horizontal_margin(1)
-            .spacing(1);
+        let [nr_str_area, str_size_area] = v_layout.areas(*rect);
+
+        let h_layout = &Layout::horizontal([
+            Length(("Nr of mirrors:".len() + 1).try_into().unwrap()),
+            Max(4),
+        ])
+        .horizontal_margin(1)
+        .spacing(1);
         let [label_area, input_area] = h_layout.areas(nr_str_area);
         let para_label = Paragraph::new("Nr of mirrors:")
             .alignment(ratatui::layout::Alignment::Left)
@@ -609,8 +599,8 @@ impl <'a>LvNewView <'a> {
         )
         .alignment(ratatui::layout::Alignment::Left)
         .style(self.style_input());
-        frame.render_widget(para_label, label_area); 
-        frame.render_widget(para_input, input_area); 
+        frame.render_widget(para_label, label_area);
+        frame.render_widget(para_input, input_area);
 
         let [label_area, input_area] = h_layout.areas(str_size_area);
         let para_label = Paragraph::new("stripe size:")
@@ -624,23 +614,23 @@ impl <'a>LvNewView <'a> {
         )
         .alignment(ratatui::layout::Alignment::Left)
         .style(self.style_input());
-        frame.render_widget(para_label, label_area); 
+        frame.render_widget(para_label, label_area);
         frame.render_widget(para_input, input_area);
     }
 
-    fn draw_segtype_opts(&mut self, frame: &mut Frame, rect: &mut Rect) {        
-        let segtype  = self.lvsegtype_opts[self.lvsegtype_state.selected.unwrap()];
-       
+    fn draw_segtype_opts(&mut self, frame: &mut Frame, rect: &mut Rect) {
+        let segtype = self.lvsegtype_opts[self.lvsegtype_state.selected.unwrap()];
+
         match segtype {
-            "linear" => rect.height = 0,           
+            "linear" => rect.height = 0,
             "striped" => self.render_segtype_raid(frame, rect),
-            "raid0" => self.render_segtype_raid(frame, rect),            
+            "raid0" => self.render_segtype_raid(frame, rect),
             "raid10" => self.render_segtype_raid(frame, rect),
-            "raid5" => {                
-                self.render_segtype_raid(frame, rect);              
-            },
+            "raid5" => {
+                self.render_segtype_raid(frame, rect);
+            }
             "raid1" => self.render_segtype_mirror(frame, rect),
-             _ => rect.height = 0
+            _ => rect.height = 0,
         }
     }
 
@@ -649,14 +639,16 @@ impl <'a>LvNewView <'a> {
         let h_layout = &Layout::horizontal([Max(15), Max(15)])
             .horizontal_margin(1)
             .spacing(1);
-        let [ avail_pv_area, sel_pv_area] = h_layout.areas(*rect);
+        let [avail_pv_area, sel_pv_area] = h_layout.areas(*rect);
 
         // Render available list
         let avail_builder = ListBuilder::new(|context| {
-            let mut item = ListItem::new(self.pv_devs_avail[context.index].clone());           
+            let mut item = ListItem::new(self.pv_devs_avail[context.index].clone());
             let main_axis_size = 1;
-            if context.is_selected && self.focus == Focus::LvPvAv{
-                item.style = Style::new().bg(self.colors.header_bg).fg(self.colors.selected_column_style_fg);
+            if context.is_selected && self.focus == Focus::LvPvAv {
+                item.style = Style::new()
+                    .bg(self.colors.header_bg)
+                    .fg(self.colors.selected_column_style_fg);
             } else {
                 item.style = Style::new().fg(self.colors.selected_column_style_fg);
             }
@@ -667,30 +659,33 @@ impl <'a>LvNewView <'a> {
             Focus::LvPvAv => Style::new().fg(self.colors.block_border),
             _ => Style::new().fg(self.colors.header_bg),
         };
-        let block = Block::bordered().padding(Padding::horizontal(1))
+        let block = Block::bordered()
+            .padding(Padding::horizontal(1))
             .border_type(BorderType::Plain)
             .title("available")
-            .border_style(border_style);         
-        let avail_count = self.pv_devs_avail.len();      
+            .border_style(border_style);
+        let avail_count = self.pv_devs_avail.len();
         let avail_list = ListView::new(avail_builder, avail_count)
             .scroll_axis(ScrollAxis::Vertical)
             .block(block)
             .infinite_scrolling(true);
-        let avail_state = &mut self.avail_list_state;     
+        let avail_state = &mut self.avail_list_state;
         if avail_state.selected.is_none() {
-            avail_state.select(Some(0));            
+            avail_state.select(Some(0));
         }
 
         frame.render_stateful_widget(avail_list, avail_pv_area, avail_state);
 
         // Render selected pvs.
         let sel_builder = ListBuilder::new(|context| {
-            let mut item = ListItem::new(self.pv_devs_selected[context.index].clone());       
-             if context.is_selected && self.focus == Focus::LvPvSel{
-                item.style = Style::new().bg(self.colors.header_bg).fg(self.colors.selected_column_style_fg);
+            let mut item = ListItem::new(self.pv_devs_selected[context.index].clone());
+            if context.is_selected && self.focus == Focus::LvPvSel {
+                item.style = Style::new()
+                    .bg(self.colors.header_bg)
+                    .fg(self.colors.selected_column_style_fg);
             } else {
                 item.style = Style::new().fg(self.colors.selected_column_style_fg);
-            }    
+            }
             let main_axis_size = 1;
             (item, main_axis_size)
         });
@@ -698,18 +693,19 @@ impl <'a>LvNewView <'a> {
             Focus::LvPvSel => Style::new().fg(self.colors.block_border),
             _ => Style::new().fg(self.colors.header_bg),
         };
-        let block = Block::bordered().padding(Padding::horizontal(1))
+        let block = Block::bordered()
+            .padding(Padding::horizontal(1))
             .border_type(BorderType::Plain)
             .title("selected")
-            .border_style(border_style);         
-        let sel_count = self.pv_devs_selected.len();      
+            .border_style(border_style);
+        let sel_count = self.pv_devs_selected.len();
         let sel_list = ListView::new(sel_builder, sel_count)
             .scroll_axis(ScrollAxis::Vertical)
             .block(block)
             .infinite_scrolling(true);
-        let sel_state = &mut self.sel_list_state;    
+        let sel_state = &mut self.sel_list_state;
         if sel_state.selected.is_none() {
-            sel_state.select(Some(0));            
+            sel_state.select(Some(0));
         }
 
         frame.render_stateful_widget(sel_list, sel_pv_area, sel_state);

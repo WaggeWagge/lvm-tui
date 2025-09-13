@@ -1,14 +1,14 @@
+use Constraint::{Length, Min};
 use ratatui::{
     Frame,
     layout::{Constraint, Layout, Margin, Rect},
     style::{Modifier, Style, Stylize},
     text::{Line, Text},
     widgets::{
-        Block, BorderType, Borders, Cell, Gauge, HighlightSpacing, Paragraph, Row,
-        Scrollbar, ScrollbarOrientation, ScrollbarState, Table, TableState,
+        Block, BorderType, Borders, Cell, Gauge, HighlightSpacing, Paragraph, Row, Scrollbar,
+        ScrollbarOrientation, ScrollbarState, Table, TableState,
     },
 };
-use Constraint::{Length, Min};
 
 use crate::{
     lvm::{self, LvmLvData, LvmVgData},

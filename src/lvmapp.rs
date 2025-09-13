@@ -1,10 +1,10 @@
 pub mod lvview;
-pub mod vgview;
 pub mod res;
+pub mod vgview;
 
 use Constraint::{Length, Min};
 use color_eyre::{Result, eyre::Ok};
-use crossterm::event::{KeyModifiers};
+use crossterm::event::KeyModifiers;
 use ratatui::{
     DefaultTerminal, Frame,
     crossterm::event::{self, Event, KeyCode, KeyEventKind},
@@ -49,7 +49,6 @@ enum ViewType {
     LvNew,
 }
 
-
 pub struct LvmApp<'a> {
     state: TableState,
     items: Vec<VgTableData>,
@@ -64,7 +63,7 @@ pub struct LvmApp<'a> {
     lv_new_view: Option<lvview::LvNewView<'a>>,
 }
 
-impl <'a> LvmApp<'a> {
+impl<'a> LvmApp<'a> {
     pub fn new() -> Self {
         let vg_list = lvm::get_vgs();
         let pv_list = lvm::get_pvs();
@@ -253,9 +252,10 @@ impl <'a> LvmApp<'a> {
                             KeyCode::Char('n') => {
                                 if key.modifiers == KeyModifiers::CONTROL {
                                     self.view_type = ViewType::LvNew;
-                                    self.lv_new_view =
-                                        Some(lvview::LvNewView::new(&self.sel_vg_name, 
-                                            vg_info_view.pvdev_list.as_mut().unwrap()));
+                                    self.lv_new_view = Some(lvview::LvNewView::new(
+                                        &self.sel_vg_name,
+                                        vg_info_view.pvdev_list.as_mut().unwrap(),
+                                    ));
                                 }
                             }
                             _ => {}
