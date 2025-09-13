@@ -10,7 +10,7 @@ use ratatui::{
 };
 use tui_widget_list::{ListBuilder, ListState, ListView, ScrollAxis};
 
-use Constraint::{Length, Max, Min};
+use Constraint::{Length, Max};
 
 use crate::lvmapp::res::{self, Colors};
 
