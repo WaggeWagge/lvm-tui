@@ -10,7 +10,7 @@ use ratatui::{
 };
 use tui_widget_list::{ListBuilder, ListState, ListView, ScrollAxis};
 
-use Constraint::{Length, Max};
+use Constraint::{Length, Max, Min};
 
 use crate::lvmapp::res::{self, Colors};
 
@@ -52,13 +52,15 @@ struct InputField {
     value: String,
     pos: usize,
 }
-pub struct LvNewView {
+pub struct LvNewView<'a> {
     focus: Focus,
     vg_name: String,
     lvname: InputField,
     lvsize: InputField,
     lvsize_opt_state: ListState,
-    lvsegtype_state: ListState,           
+    lvsegtype_state: ListState, 
+    lvsegtype_opts : [&'a str; 5],   
+    nrdevs: InputField,       
     pv_devs_avail: Vec<String>,
     pv_devs_selected: Vec<String>,
     sel_list_state: ListState,
@@ -66,7 +68,7 @@ pub struct LvNewView {
     colors: Colors,
 }
 
-impl LvNewView {
+impl <'a>LvNewView <'a> {
     pub fn new(vg_name: &String, pvdev_names: &Vec<String>) -> Self {
         Self {
             focus: Focus::LvName,
@@ -81,6 +83,11 @@ impl LvNewView {
                 value: String::from(""),
                 pos: 0,
             },
+            nrdevs: InputField { 
+                len_max: 4, 
+                value: String::from("1"), 
+                pos: 0, 
+            },
             lvsize_opt_state: ListState::default(),
             sel_list_state: ListState::default(),
             avail_list_state: ListState::default(),         
@@ -88,6 +95,7 @@ impl LvNewView {
             lvsegtype_state: ListState::default(),
             pv_devs_avail: pvdev_names.to_vec(),
             pv_devs_selected: Vec::new(),
+            lvsegtype_opts: ["linear", "raid0", "raid1", "raid10", "raid5"],
         }
     }
 
@@ -349,7 +357,7 @@ impl LvNewView {
     }
 
      fn render_segtype_opt(&mut self, frame: &mut Frame, rect: &mut Rect) {
-        let segtype_opts = ["linear", "raid0", "raid1", "raid5"];
+      
         rect.height = 1;
         let list_style = match self.focus {
             // IF we have focus, highlight
@@ -366,7 +374,7 @@ impl LvNewView {
         };
 
         let builder = ListBuilder::new(|context| {
-            let mut item = ListItem::new(segtype_opts[context.index]);
+            let mut item = ListItem::new( self.lvsegtype_opts[context.index]);
             if context.is_selected {
                 item.style = Style::new().fg(self.colors.selected_cell_style_fg);
             }
@@ -375,7 +383,7 @@ impl LvNewView {
         });
 
         let block = Block::default().padding(Padding::horizontal(1));
-        let item_count = segtype_opts.len();
+        let item_count = self.lvsegtype_opts.len();
         let list = ListView::new(builder, item_count)
             .scroll_axis(ScrollAxis::Vertical)
             .block(block)
@@ -383,8 +391,8 @@ impl LvNewView {
             .style(list_style);
         let state = &mut self.lvsegtype_state;
         if state.selected.is_none() {
-            // Default select G
-            state.select(Some(1));
+            // Default select linear
+            state.select(Some(0));
         }
 
         frame.render_stateful_widget(list, *rect, state);
@@ -406,10 +414,11 @@ impl LvNewView {
     pub fn render(&mut self, frame: &mut Frame, rect: &Rect) {
         let inner_layout = &Layout::vertical([
             Length(1),
-            Max(1),
-            Max(1),
-            Max(1),
-            Max(2),
+            Length(1),
+            Length(1),
+            Length(1),
+            Length(1),
+            Length(2),
             Length(1),
             Length(10),
             Max(2),
@@ -421,6 +430,7 @@ impl LvNewView {
             lvname_area,
             lvsize_area,
             lvtype_area,
+            mut lvtype_options_area,
             pv_sel_label,
             mut pv_sel_area,
             info_area,
@@ -492,10 +502,16 @@ impl LvNewView {
         frame.render_widget(para_label, label_area);
         frame.render_widget(para_input, input_area);
         self.render_size_opt(frame, &mut option_area);
+        if self.focus == Focus::LvSize {
+            frame.set_cursor_position(Position::new(
+                input_area.x + (self.lvsize.pos as u16),
+                input_area.y,
+            ));
+        }
 
         // Volumne type, linear, raid etc.
         // Redefine layout for next input row
-        let h_layout = &Layout::horizontal([Length(8), Length(10)])
+        let h_layout = &Layout::horizontal([Length(8), Length(9)])
             .horizontal_margin(1)
             .spacing(1);
         let [mut label_area, mut option_area] = h_layout.areas(lvtype_area);
@@ -508,6 +524,9 @@ impl LvNewView {
         frame.render_widget(para_label, label_area);       
         self.render_segtype_opt(frame, &mut option_area);
 
+        // Number of devices, depending of selected seg type, stripe/raid0, mirror/raid1, raid5.       
+        self.draw_segtype_opts(frame,  &mut lvtype_options_area);
+
         let para_sel = Paragraph::new("Select PVs new LV will use (Optional):")
             .alignment(ratatui::layout::Alignment::Left)
             .style(Style::new().fg(self.colors.block_border));
@@ -515,11 +534,113 @@ impl LvNewView {
         self.render_pvsel(frame, &mut pv_sel_area);
 
         self.render_info(frame, &info_area);
-        if self.focus == Focus::LvSize {
-            frame.set_cursor_position(Position::new(
-                input_area.x + (self.lvsize.pos as u16),
-                input_area.y,
-            ));
+       
+    }
+
+    fn render_segtype_raid(&mut self, frame: &mut Frame, rect: &Rect) {    
+
+        let v_layout = &Layout::vertical([
+            Length(1),
+            Length(1),            
+        ]);                
+        
+        let [
+            nr_str_area,
+            str_size_area,
+        ] = v_layout.areas(*rect);
+
+        let h_layout = &Layout::horizontal([Length(("Nr of stripes/PV:".len()+1).try_into().unwrap() ), Max(4)])
+            .horizontal_margin(1)
+            .spacing(1);
+        let [label_area, input_area] = h_layout.areas(nr_str_area);
+        let para_label = Paragraph::new("Nr of stripes/PV:")
+            .alignment(ratatui::layout::Alignment::Left)
+            .style(Style::new().fg(self.colors.row_fg));
+        let para_input = Paragraph::new(
+            self.nrdevs
+                .value
+                .clone()
+                .fg(self.colors.selected_column_style_fg),
+        )
+        .alignment(ratatui::layout::Alignment::Left)
+        .style(self.style_input());
+        frame.render_widget(para_label, label_area); 
+        frame.render_widget(para_input, input_area); 
+
+        let [label_area, input_area] = h_layout.areas(str_size_area);
+        let para_label = Paragraph::new("stripe size:")
+            .alignment(ratatui::layout::Alignment::Left)
+            .style(Style::new().fg(self.colors.row_fg));
+        let para_input = Paragraph::new(
+            self.nrdevs
+                .value
+                .clone()
+                .fg(self.colors.selected_column_style_fg),
+        )
+        .alignment(ratatui::layout::Alignment::Left)
+        .style(self.style_input());
+        frame.render_widget(para_label, label_area); 
+        frame.render_widget(para_input, input_area);
+    }
+
+     fn render_segtype_mirror(&mut self, frame: &mut Frame, rect: &Rect) {
+         let v_layout = &Layout::vertical([
+            Length(1),
+            Length(1),            
+        ]);                
+        
+        let [
+            nr_str_area,
+            str_size_area,
+        ] = v_layout.areas(*rect);
+
+        let h_layout = &Layout::horizontal([Length(("Nr of mirrors:".len()+1).try_into().unwrap() ), Max(4)])
+            .horizontal_margin(1)
+            .spacing(1);
+        let [label_area, input_area] = h_layout.areas(nr_str_area);
+        let para_label = Paragraph::new("Nr of mirrors:")
+            .alignment(ratatui::layout::Alignment::Left)
+            .style(Style::new().fg(self.colors.row_fg));
+        let para_input = Paragraph::new(
+            self.nrdevs
+                .value
+                .clone()
+                .fg(self.colors.selected_column_style_fg),
+        )
+        .alignment(ratatui::layout::Alignment::Left)
+        .style(self.style_input());
+        frame.render_widget(para_label, label_area); 
+        frame.render_widget(para_input, input_area); 
+
+        let [label_area, input_area] = h_layout.areas(str_size_area);
+        let para_label = Paragraph::new("stripe size:")
+            .alignment(ratatui::layout::Alignment::Left)
+            .style(Style::new().fg(self.colors.row_fg));
+        let para_input = Paragraph::new(
+            self.nrdevs
+                .value
+                .clone()
+                .fg(self.colors.selected_column_style_fg),
+        )
+        .alignment(ratatui::layout::Alignment::Left)
+        .style(self.style_input());
+        frame.render_widget(para_label, label_area); 
+        frame.render_widget(para_input, input_area);
+    }
+
+    fn draw_segtype_opts(&mut self, frame: &mut Frame, rect: &mut Rect) {        
+        let segtype  = self.lvsegtype_opts[self.lvsegtype_state.selected.unwrap()];
+       
+        match segtype {
+            "linear" => rect.height = 0,           
+            "striped" => self.render_segtype_raid(frame, rect),
+            "raid0" => self.render_segtype_raid(frame, rect),            
+            "raid10" => self.render_segtype_raid(frame, rect),
+            "raid5" => {                
+                self.render_segtype_raid(frame, rect);              
+            },
+            "raid1" => self.render_segtype_mirror(frame, rect),
+             _ => rect.height = 0
         }
     }
 

@@ -50,7 +50,7 @@ enum ViewType {
 }
 
 
-pub struct LvmApp {
+pub struct LvmApp<'a> {
     state: TableState,
     items: Vec<VgTableData>,
     vgd_longest_item_lens: (u16, u16, u16), // order is (vg_name, pv_name_ lv_name)
@@ -61,10 +61,10 @@ pub struct LvmApp {
     sel_vg_name: String,
     title: String,
     vg_info_view: Option<VgInfoView>,
-    lv_new_view: Option<lvview::LvNewView>,
+    lv_new_view: Option<lvview::LvNewView<'a>>,
 }
 
-impl LvmApp {
+impl <'a> LvmApp<'a> {
     pub fn new() -> Self {
         let vg_list = lvm::get_vgs();
         let pv_list = lvm::get_pvs();
