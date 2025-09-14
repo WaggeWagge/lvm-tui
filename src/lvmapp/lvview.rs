@@ -6,7 +6,7 @@ use ratatui::{
     layout::{Constraint, Layout, Position, Rect},
     style::{Modifier, Style, Stylize},
     text::{Line, Text},
-    widgets::{Block, BorderType, Padding, Paragraph, Widget, Wrap},
+    widgets::{Block, BorderType, Padding, Paragraph, Widget},
 };
 use tui_widget_list::{ListBuilder, ListState, ListView, ScrollAxis};
 
@@ -398,17 +398,6 @@ impl<'a> LvNewView<'a> {
         frame.render_widget(Text::from("▾").style(list_style).right_aligned(), *rect);
     }
 
-    fn render_info(&mut self, frame: &mut Frame, rect: &Rect) {
-        let block = Block::default();
-        let para_label = Paragraph::new(Text::from_iter(C_LVM_INFO_TEXT))
-            .block(block)
-            .alignment(ratatui::layout::Alignment::Left)
-            .wrap(Wrap { trim: false })
-            .style(Style::new().fg(self.colors.row_fg));
-
-        frame.render_widget(para_label, *rect);
-    }
-
     pub fn render(&mut self, frame: &mut Frame, rect: &Rect) {
         let inner_layout = &Layout::vertical([
             Length(1),
@@ -419,7 +408,6 @@ impl<'a> LvNewView<'a> {
             Length(2),
             Length(1),
             Length(10),
-            Max(2),
         ])
         .margin(2);
         let [
@@ -431,7 +419,6 @@ impl<'a> LvNewView<'a> {
             mut lvtype_options_area,
             pv_sel_label,
             mut pv_sel_area,
-            info_area,
         ] = inner_layout.areas(*rect);
         let para_heading = Paragraph::new("CREATE LOGICAL VOLUMNE")
             .alignment(ratatui::layout::Alignment::Left)
@@ -530,8 +517,6 @@ impl<'a> LvNewView<'a> {
             .style(Style::new().fg(self.colors.block_border));
         frame.render_widget(para_sel, pv_sel_label);
         self.render_pvsel(frame, &mut pv_sel_area);
-
-        self.render_info(frame, &info_area);
     }
 
     fn render_segtype_raid(&mut self, frame: &mut Frame, rect: &Rect) {
@@ -540,13 +525,13 @@ impl<'a> LvNewView<'a> {
         let [nr_str_area, str_size_area] = v_layout.areas(*rect);
 
         let h_layout = &Layout::horizontal([
-            Length(("Nr of stripes/PV:".len() + 1).try_into().unwrap()),
-            Max(4),
+            Length(("stripes/PVs:".len() + 1).try_into().unwrap()),
+            Length(5),
         ])
         .horizontal_margin(1)
         .spacing(1);
         let [label_area, input_area] = h_layout.areas(nr_str_area);
-        let para_label = Paragraph::new("Nr of stripes/PV:")
+        let para_label = Paragraph::new("stripes/PVs:")
             .alignment(ratatui::layout::Alignment::Left)
             .style(Style::new().fg(self.colors.row_fg));
         let para_input = Paragraph::new(
@@ -582,13 +567,13 @@ impl<'a> LvNewView<'a> {
         let [nr_str_area, str_size_area] = v_layout.areas(*rect);
 
         let h_layout = &Layout::horizontal([
-            Length(("Nr of mirrors:".len() + 1).try_into().unwrap()),
-            Max(4),
+            Length(("stripe size:".len() + 1).try_into().unwrap()),
+            Length(5),
         ])
         .horizontal_margin(1)
         .spacing(1);
         let [label_area, input_area] = h_layout.areas(nr_str_area);
-        let para_label = Paragraph::new("Nr of mirrors:")
+        let para_label = Paragraph::new("mirrors:")
             .alignment(ratatui::layout::Alignment::Left)
             .style(Style::new().fg(self.colors.row_fg));
         let para_input = Paragraph::new(
@@ -626,9 +611,7 @@ impl<'a> LvNewView<'a> {
             "striped" => self.render_segtype_raid(frame, rect),
             "raid0" => self.render_segtype_raid(frame, rect),
             "raid10" => self.render_segtype_raid(frame, rect),
-            "raid5" => {
-                self.render_segtype_raid(frame, rect);
-            }
+            "raid5" => self.render_segtype_raid(frame, rect),
             "raid1" => self.render_segtype_mirror(frame, rect),
             _ => rect.height = 0,
         }

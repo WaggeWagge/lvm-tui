@@ -7,8 +7,6 @@ pub const PALETTES: [tailwind::Palette; 4] = [
     tailwind::INDIGO,
     tailwind::SLATE,
 ];
-pub const INFO_TEXT: [&str; 1] =
-    ["(Esc|q) quit | (↑) move up | (↓) move down | (←) move left | (→) move right"];
 
 pub const TITLE: &str = " LVM-TUI ";
 pub const ITEM_HEIGHT: usize = 1;
@@ -25,6 +23,8 @@ pub struct Colors {
     pub normal_row_color: Color,
     pub alt_row_color: Color,
     pub footer_border_color: Color,
+    pub infotxt_fg: Color,
+    pub infotxt_bg: Color,
 }
 
 impl Colors {
@@ -41,6 +41,8 @@ impl Colors {
             normal_row_color: tailwind::SLATE.c950,
             alt_row_color: tailwind::SLATE.c900,
             footer_border_color: color.c400,
+            infotxt_fg: color.c400,
+            infotxt_bg: color.c900,
         }
     }
 }

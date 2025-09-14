@@ -2,18 +2,20 @@ pub mod lvview;
 pub mod res;
 pub mod vgview;
 
+use color_eyre::Result;
+
 use Constraint::{Length, Min};
-use color_eyre::{Result, eyre::Ok};
-use crossterm::event::KeyModifiers;
+use ratatui::style::Stylize;
+use ratatui::text::Span;
 use ratatui::{
     DefaultTerminal, Frame,
     crossterm::event::{self, Event, KeyCode, KeyEventKind},
     layout::{Constraint, Layout, Margin, Rect},
-    style::{Modifier, Style, Stylize},
+    style::{Modifier, Style},
     text::{Line, Text},
     widgets::{
-        Block, BorderType, Borders, Cell, HighlightSpacing, Paragraph, Row, Scrollbar,
-        ScrollbarOrientation, ScrollbarState, Table, TableState,
+        Block, Borders, Cell, HighlightSpacing, Paragraph, Row, Scrollbar, ScrollbarOrientation,
+        ScrollbarState, Table, TableState,
     },
 };
 
@@ -228,15 +230,15 @@ impl<'a> LvmApp<'a> {
                     if key.kind == KeyEventKind::Press {
                         match key.code {
                             KeyCode::Enter => self.acton_cell(),
-                            KeyCode::Char('q') | KeyCode::Esc => {
+                            KeyCode::Esc => {
                                 // if in main window, quit
                                 self.view_type = ViewType::VgOverview;
                                 return Ok(());
                             }
-                            KeyCode::Char('j') | KeyCode::Down => self.next_row(),
-                            KeyCode::Char('k') | KeyCode::Up => self.previous_row(),
-                            KeyCode::Char('l') | KeyCode::Right => self.next_column(),
-                            KeyCode::Char('h') | KeyCode::Left => self.previous_column(),
+                            KeyCode::Down => self.next_row(),
+                            KeyCode::Up => self.previous_row(),
+                            KeyCode::Right => self.next_column(),
+                            KeyCode::Left => self.previous_column(),
                             _ => {}
                         }
                     }
@@ -244,19 +246,15 @@ impl<'a> LvmApp<'a> {
                     let vg_info_view = self.vg_info_view.as_mut().unwrap();
                     if key.kind == KeyEventKind::Press {
                         match key.code {
-                            KeyCode::Char('q') | KeyCode::Esc => {
-                                self.view_type = ViewType::VgOverview
-                            }
+                            KeyCode::Esc => self.view_type = ViewType::VgOverview,
                             KeyCode::Char('j') | KeyCode::Down => vg_info_view.next_lvrow(),
                             KeyCode::Char('k') | KeyCode::Up => vg_info_view.previous_lvrow(),
-                            KeyCode::Char('n') => {
-                                if key.modifiers == KeyModifiers::CONTROL {
-                                    self.view_type = ViewType::LvNew;
-                                    self.lv_new_view = Some(lvview::LvNewView::new(
-                                        &self.sel_vg_name,
-                                        vg_info_view.pvdev_list.as_mut().unwrap(),
-                                    ));
-                                }
+                            KeyCode::F(7) => {
+                                self.view_type = ViewType::LvNew;
+                                self.lv_new_view = Some(lvview::LvNewView::new(
+                                    &self.sel_vg_name,
+                                    vg_info_view.pvdev_list.as_ref().unwrap(),
+                                ));
                             }
                             _ => {}
                         }
@@ -265,7 +263,7 @@ impl<'a> LvmApp<'a> {
                     let lv_new_view = self.lv_new_view.as_mut().unwrap();
                     if key.kind == KeyEventKind::Press {
                         match key.code {
-                            KeyCode::Char('q') | KeyCode::Esc => self.view_type = ViewType::VgInfo, // "back"
+                            KeyCode::Esc => self.view_type = ViewType::VgInfo, // "back"
                             _ => {
                                 lv_new_view.handle_events(&key);
                             }
@@ -279,7 +277,7 @@ impl<'a> LvmApp<'a> {
     // Draws widgets and views depending on view type.
     // Data needed (in self) expected to have been initialized beforhand in e.g. run (handleEvent)
     fn draw(&mut self, frame: &mut Frame) {
-        let vertical = &Layout::vertical([Constraint::Min(5), Constraint::Length(3)]);
+        let vertical = &Layout::vertical([Constraint::Min(5), Constraint::Length(2)]);
         let outer_layout = vertical.split(frame.area());
         self.set_colors();
 
@@ -391,18 +389,31 @@ impl<'a> LvmApp<'a> {
     }
 
     fn render_footer(&self, frame: &mut Frame, area: Rect) {
-        let info_footer = Paragraph::new(Text::from_iter(res::INFO_TEXT))
+        let s1 = Style::new().white().bold();
+        let s2 = Style::new()
+            .bg(self.colors.infotxt_bg)
+            .fg(self.colors.infotxt_fg);
+        let esq = Span::from("ESC").style(s1);
+        let quit = Span::from("Quit").style(s2);
+        let tab = Span::from(" TAB").style(s1);
+        let tabtxt = Span::from("Toggle").style(s2);
+        let spc = Span::from(" SPACE").style(s1);
+        let msec = Span::from("Mark/sel").style(s2);
+        let f6 = Span::from(" F6").style(s1);
+        let save = Span::from("Save").style(s2);
+        let f7 = Span::from(" F7").style(s1);
+        let new = Span::from("New").style(s2);
+
+        let line = Line::from(vec![esq, quit, tab, tabtxt, spc, msec, f6, save, f7, new]);
+
+        let info_footer = Paragraph::new(line)
             .style(
                 Style::new()
                     .fg(self.colors.row_fg)
                     .bg(self.colors.buffer_bg),
             )
             .centered()
-            .block(
-                Block::bordered()
-                    .border_type(BorderType::Double)
-                    .border_style(Style::new().fg(self.colors.footer_border_color)),
-            );
+            .block(Block::default());
         frame.render_widget(info_footer, area);
     }
 }
