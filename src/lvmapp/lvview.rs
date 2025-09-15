@@ -200,7 +200,7 @@ impl<'a> LvNewView<'a> {
             Focus::LvPvSel => self.focus = Focus::LvName,
         }
     }
-
+    
     fn prev_focus(&mut self) {
         match self.focus {
             Focus::LvName => self.handle_prev_pv_selection(),
