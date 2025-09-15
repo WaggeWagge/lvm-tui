@@ -269,6 +269,7 @@ impl<'a> LvmApp<'a> {
                                     // done,
                                     self.view_type = ViewType::VgInfo; // "back"
                                     self.lv_new_view = None;
+                                    // TODO, update status bar with any result?
                                 }
                             }
                         }

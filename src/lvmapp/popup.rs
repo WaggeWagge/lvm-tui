@@ -1,11 +1,13 @@
 use derive_setters::Setters;
 use ratatui::{
     buffer::Buffer,
-    layout::Rect,
+    layout::{Constraint, Layout, Rect},
     style::{Style, Stylize},
     text::{Line, Span, Text},
     widgets::{Block, Borders, Clear, Paragraph, Widget, Wrap},
 };
+
+use Constraint::{Max, Min};
 
 use crate::lvmapp::res::Colors;
 
@@ -20,13 +22,23 @@ pub struct ConfPopup<'a> {
     colors: Colors,
 }
 
-//.style(Style::new().bg(self.colors.buffer_bg))
-//.title_style(Style::new().bold().fg(self.colors.header_fg))
-//.border_style(Style::new().fg(self.colors.block_border))
 impl<'a> ConfPopup<'a> {
     pub fn new(colors: Colors) -> Self {
         Self {
-            colors: colors,
+            colors: colors.clone(),
+            border_style: Style {
+                fg: Some(colors.block_border),
+                ..Default::default()
+            },
+            style: Style {
+                bg: Some(colors.buffer_bg),
+                ..Default::default()
+            },
+            title_style: Style {
+                fg: Some(colors.block_border),
+                bg: Some(colors.header_bg),
+                ..Default::default()
+            },
             ..Default::default()
         }
     }
@@ -35,6 +47,23 @@ impl<'a> ConfPopup<'a> {
 impl Widget for ConfPopup<'_> {
     fn render(self, area: Rect, buf: &mut Buffer) {
         Clear.render(area, buf);
+
+        // add a wrapper to get some spacing.
+        let outer_layout = &Layout::vertical([Min(1), Max(2)])
+            .horizontal_margin(2)
+            .vertical_margin(2)
+            .spacing(1);
+
+        let block = Block::new()
+            .title(self.title)
+            .title_style(self.title_style)
+            .borders(Borders::ALL)
+            .border_style(self.border_style)
+            .style(Style::new().bg(self.colors.buffer_bg));
+
+        block.render(area, buf);
+
+        let [content_area, act_area] = outer_layout.areas(area);
 
         let s1 = Style::new().white().bold();
         let s2 = Style::new()
@@ -47,21 +76,13 @@ impl Widget for ConfPopup<'_> {
 
         let line = Line::from(vec![enter, ok, esc, calcel]);
 
-        let mut text = Text::from(self.content);
-
-        text.push_line(Line::from(""));
-        text.push_line(line);
-
-        let block = Block::new()
-            .title(self.title)
-            .title_style(self.title_style)
-            .borders(Borders::ALL)
-            .border_style(self.border_style);
-        let para = Paragraph::new(text)
+        let para = Paragraph::new(self.content)
             .wrap(Wrap { trim: true })
             .centered()
-            .style(self.style)
-            .block(block);
-        para.render(area, buf);
+            .style(self.style);
+        para.render(content_area, buf);
+
+        let para_act = Paragraph::new(line).centered().style(self.style);
+        para_act.render(act_area, buf);
     }
 }

@@ -17,6 +17,8 @@ use crate::lvmapp::{
     res::{self, Colors},
 };
 
+use crate::lvm::{self, LvmLvData, LvmVgData};
+
 pub const C_LVM_INFO_TEXT: [&str; 1] =
     ["info: (TAB) toggle fields | (Enter) create | (ESQ|q) cancel"];
 
@@ -498,10 +500,27 @@ impl<'a> LvNewView<'a> {
                     }
                     KeyCode::Enter => {
                         if self.popup_save {
-                            // well save/create lv
-                            todo!("implement create lv");
                             self.popup_save = false;
-                            return true; // Done here
+                            // well save/create lv
+                            let size = self.lvsize.value.parse::<u64>().unwrap();
+                            let size = size * 1000; // kb
+                            let segtype = &self.lvsegtype_opts
+                                [self.lvsegtype_state.selected.unwrap()]
+                            .to_string();
+                            let lv_name = &self.lvname.value;
+                            let vg_name = &self.vg_name;
+                            let pv_list = Vec::<String>::new();
+                            let lv_c_res =
+                                lvm::create_lv(lv_name, vg_name, size, segtype, &pv_list);
+                            match lv_c_res {
+                                Ok(_) => {
+                                    return true; // Done here
+                                }
+                                Err(_) => {
+                                    // Todo, error popup or status message
+                                    return false;
+                                }
+                            }
                         }
                     }
                     _ => {}
@@ -722,19 +741,22 @@ impl<'a> LvNewView<'a> {
                 x: rect.width / 4,
                 y: rect.height / 3,
                 width: rect.width / 2,
-                height: rect.height / 3,
+                height: rect.height / 2,
             };
-            let title = format!("Create {} in {}", self.lvname.value, self.vg_name);
-            let content = format!(
-                "You are about to create a new logical volumn {} in volumn group {} !",
-                self.lvname.value, self.vg_name
-            );
+            let title = format!("Create {}", self.lvname.value);
+            let s1 = Style::new().white().bold();
+            let lvtxt = Span::from(&self.lvname.value).style(s1);
+            let vgtxt = Span::from(&self.vg_name).style(s1);
+            let line = Line::from(vec![
+                Span::from("You are about to create a new logical volumn '"),
+                lvtxt,
+                Span::from("' in volumn group '"),
+                vgtxt,
+                Span::from("'"),
+            ]);
 
             let popup = ConfPopup::new(Colors::new(&res::PALETTES[0]))
-                .content(content.into())
-                .style(Style::new().bg(self.colors.buffer_bg))
-                .title_style(Style::new().bold().fg(self.colors.header_fg))
-                .border_style(Style::new().fg(self.colors.block_border))
+                .content(line.into())
                 .title(title);
             frame.render_widget(popup, popup_area);
         }

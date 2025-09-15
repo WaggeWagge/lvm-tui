@@ -11,7 +11,7 @@ pub const PALETTES: [tailwind::Palette; 4] = [
 pub const TITLE: &str = " LVM-TUI ";
 pub const ITEM_HEIGHT: usize = 1;
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone)]
 pub struct Colors {
     pub block_border: Color,
     pub buffer_bg: Color,

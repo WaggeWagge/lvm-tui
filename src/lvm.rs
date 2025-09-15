@@ -1,11 +1,12 @@
 use std::{
     ffi::{CStr, CString},
-    ptr,
+    ptr, result,
 };
 
 use crate::lvm::lvmbind::{
-    BDLVMSEGdata, GError, bd_lvm_init, bd_lvm_lvdata_free, bd_lvm_lvs_tree, bd_lvm_pvdata_free,
-    bd_lvm_pvs, bd_lvm_vgdata_free, bd_lvm_vginfo, bd_lvm_vgs,
+    _GError, BDLVMSEGdata, GError, GErrorInitFunc, bd_lvm_init, bd_lvm_lvcreate,
+    bd_lvm_lvdata_free, bd_lvm_lvs_tree, bd_lvm_pvdata_free, bd_lvm_pvs, bd_lvm_vgdata_free,
+    bd_lvm_vginfo, bd_lvm_vgs,
 };
 
 mod lvmbind {
@@ -148,6 +149,47 @@ pub fn get_pvs() -> Vec<LvmPVData> {
     }
 
     return pv_list;
+}
+
+pub fn create_lv(
+    lv: &String,
+    vg: &String,
+    size: u64,
+    segtype: &String,
+    pvl: &Vec<String>,
+) -> Result<String, &'static str> {
+    let vg_name = vg.as_ptr() as *const i8;
+    let lv_name = lv.as_ptr() as *const i8;
+
+    let segtype = segtype.as_ptr() as *const i8;
+    let pv_list: *mut *const i8 = ptr::null_mut(); // TODO get pvl into this
+
+    unsafe {
+        let error: *mut *mut GError = ptr::null_mut(); // BUG TODO, "NULL" error pointer not filled with error info. Remain null.
+        if bd_lvm_lvcreate(
+            vg_name,
+            lv_name,
+            size,
+            segtype,
+            pv_list,
+            ptr::null_mut(),
+            error,
+        ) != 1
+        {
+            // true
+            let result: Result<String, &'static str> = Err("Failed to create LV");
+            return result;
+        }
+
+        //let e = *error;
+        //let message = CStr::from_ptr((*e).message)
+        //            .to_str()
+        //            .unwrap()
+        //            .to_string();
+        //panic!("res is {} and message is {}", res, message);
+    };
+
+    Ok(String::from("Created LV"))
 }
 
 pub fn get_lvs() -> Vec<LvmLvData> {
