@@ -1,7 +1,12 @@
-use color_eyre::owo_colors::OwoColorize;
 use crossterm::event::KeyEvent;
 use ratatui::{
-    buffer::Buffer, crossterm::event::{KeyCode, KeyEventKind}, layout::{Constraint, Layout, Position, Rect}, style::{Modifier, Style, Stylize}, text::{Line, Span, Text}, widgets::{Block, BorderType, Padding, Paragraph, Widget}, Frame
+    Frame,
+    buffer::Buffer,
+    crossterm::event::{KeyCode, KeyEventKind},
+    layout::{Constraint, Layout, Position, Rect},
+    style::{Modifier, Style, Stylize},
+    text::{Line, Span, Text},
+    widgets::{Block, BorderType, Padding, Paragraph, Widget},
 };
 use tui_widget_list::{ListBuilder, ListState, ListView, ScrollAxis};
 
@@ -200,7 +205,7 @@ impl<'a> LvNewView<'a> {
             Focus::LvPvSel => self.focus = Focus::LvName,
         }
     }
-    
+
     fn prev_focus(&mut self) {
         match self.focus {
             Focus::LvName => self.handle_prev_pv_selection(),
@@ -482,7 +487,7 @@ impl<'a> LvNewView<'a> {
                     KeyCode::Up => self.up(),
                     KeyCode::F(6) => {
                         self.save_popup();
-                    }               
+                    }
                     KeyCode::Esc => {
                         if self.popup_save {
                             // do nothing e.g stay in this view, reset popup flag.
@@ -490,14 +495,14 @@ impl<'a> LvNewView<'a> {
                         } else {
                             return true; // Done in this view.
                         }
-                    }     
+                    }
                     KeyCode::Enter => {
                         if self.popup_save {
                             // well save/create lv
                             todo!("implement create lv");
                             self.popup_save = false;
                             return true; // Done here
-                        } 
+                        }
                     }
                     _ => {}
                 }
@@ -720,15 +725,18 @@ impl<'a> LvNewView<'a> {
                 height: rect.height / 3,
             };
             let title = format!("Create {} in {}", self.lvname.value, self.vg_name);
-            let content = format!("You are about to create a new logical volumn {} in volumn group {} !", self.lvname.value, self.vg_name );
-          
-            let popup = ConfPopup::new(Colors::new(&res::PALETTES[0]))            
-                .content(content.into())                
-                .style(Style::new().bg(self.colors.buffer_bg)) 
+            let content = format!(
+                "You are about to create a new logical volumn {} in volumn group {} !",
+                self.lvname.value, self.vg_name
+            );
+
+            let popup = ConfPopup::new(Colors::new(&res::PALETTES[0]))
+                .content(content.into())
+                .style(Style::new().bg(self.colors.buffer_bg))
                 .title_style(Style::new().bold().fg(self.colors.header_fg))
-                .border_style(Style::new().fg(self.colors.block_border))            
+                .border_style(Style::new().fg(self.colors.block_border))
                 .title(title);
-            frame.render_widget(popup, popup_area);            
+            frame.render_widget(popup, popup_area);
         }
     }
 

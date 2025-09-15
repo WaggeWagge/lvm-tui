@@ -263,7 +263,7 @@ impl<'a> LvmApp<'a> {
                 } else if self.view_type == ViewType::LvNew {
                     let lv_new_view = self.lv_new_view.as_mut().unwrap();
                     if key.kind == KeyEventKind::Press {
-                        match key.code {                           
+                        match key.code {
                             _ => {
                                 if lv_new_view.handle_events(&key) {
                                     // done,
