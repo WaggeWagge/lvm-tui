@@ -1,11 +1,12 @@
 use std::{
     ffi::{CStr, CString},
-    ptr,
+    ptr, result,
 };
 
 use crate::lvm::lvmbind::{
-    BDLVMSEGdata, GError, bd_lvm_init, bd_lvm_lvdata_free, bd_lvm_lvs_tree, bd_lvm_pvdata_free,
-    bd_lvm_pvs, bd_lvm_vgdata_free, bd_lvm_vginfo, bd_lvm_vgs,
+    _GError, BDLVMSEGdata, GError, GErrorInitFunc, bd_lvm_init, bd_lvm_lvcreate,
+    bd_lvm_lvdata_free, bd_lvm_lvs_tree, bd_lvm_pvdata_free, bd_lvm_pvs, bd_lvm_vgdata_free,
+    bd_lvm_vginfo, bd_lvm_vgs,
 };
 
 mod lvmbind {
@@ -24,7 +25,7 @@ pub struct NameValue {
     pub value: String,
 }
 
-pub struct Pv {
+pub struct LvmPVData {
     pub pv_name: String,
     pub vg_name: String,
 }
@@ -117,8 +118,8 @@ pub fn get_vgs() -> Vec<String> {
     return vg_list;
 }
 
-pub fn get_pvs() -> Vec<Pv> {
-    let mut pv_list: Vec<Pv> = Vec::<Pv>::new();
+pub fn get_pvs() -> Vec<LvmPVData> {
+    let mut pv_list: Vec<LvmPVData> = Vec::<LvmPVData>::new();
 
     unsafe {
         let error: *mut *mut GError = ptr::null_mut();
@@ -130,7 +131,7 @@ pub fn get_pvs() -> Vec<Pv> {
 
         while !(*lvm_pv_arr).is_null() {
             let lvm_pv_data = *lvm_pv_arr;
-            let pv_item: Pv = Pv {
+            let pv_item: LvmPVData = LvmPVData {
                 pv_name: CStr::from_ptr((*lvm_pv_data).pv_name)
                     .to_str()
                     .unwrap()
@@ -148,6 +149,47 @@ pub fn get_pvs() -> Vec<Pv> {
     }
 
     return pv_list;
+}
+
+pub fn create_lv(
+    lv: &String,
+    vg: &String,
+    size: u64,
+    segtype: &String,
+    pvl: &Vec<String>,
+) -> Result<String, &'static str> {
+    let vg_name = vg.as_ptr() as *const i8;
+    let lv_name = lv.as_ptr() as *const i8;
+
+    let segtype = segtype.as_ptr() as *const i8;
+    let pv_list: *mut *const i8 = ptr::null_mut(); // TODO get pvl into this
+
+    unsafe {
+        let error: *mut *mut GError = ptr::null_mut(); // BUG TODO, "NULL" error pointer not filled with error info. Remain null.
+        if bd_lvm_lvcreate(
+            vg_name,
+            lv_name,
+            size,
+            segtype,
+            pv_list,
+            ptr::null_mut(),
+            error,
+        ) != 1
+        {
+            // true
+            let result: Result<String, &'static str> = Err("Failed to create LV");
+            return result;
+        }
+
+        //let e = *error;
+        //let message = CStr::from_ptr((*e).message)
+        //            .to_str()
+        //            .unwrap()
+        //            .to_string();
+        //panic!("res is {} and message is {}", res, message);
+    };
+
+    Ok(String::from("Created LV"))
 }
 
 pub fn get_lvs() -> Vec<LvmLvData> {
@@ -225,7 +267,7 @@ pub fn conv_lv_segs(mut segs_arr: *mut *mut BDLVMSEGdata) -> Vec<LvmlvSegData> {
 }
 
 // Convinient functions
-pub fn find_pvs_by_vg(vg_name: &String, pv_list: &Vec<Pv>) -> Vec<String> {
+pub fn find_pvs_by_vg(vg_name: &String, pv_list: &Vec<LvmPVData>) -> Vec<String> {
     let mut pvs_in_vg_list = Vec::<String>::new();
 
     for pv_item in pv_list {

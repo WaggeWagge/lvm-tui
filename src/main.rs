@@ -5,25 +5,59 @@
 pub mod lvm;
 pub mod lvmapp;
 
-use color_eyre::Result;
+use std::process::{ExitCode, Termination};
 
-fn main() -> Result<()> {
-    if !lvm::init() {
-        panic!("Failed to scan blockdevs");
+pub enum LinuxExitCode {
+    EOk,
+    EErr(u8),
+}
+
+impl Termination for LinuxExitCode {
+    fn report(self) -> ExitCode {
+        match self {
+            LinuxExitCode::EOk => ExitCode::SUCCESS,
+            LinuxExitCode::EErr(v) => ExitCode::from(v),
+        }
     }
-    color_eyre::install()?;
+}
+
+fn main() -> LinuxExitCode {
+    if !lvm::init() {
+        println!("Failed to scan blockdevs");
+        return LinuxExitCode::EErr(1);
+    }
 
     unsafe {
         let current_uid = nix::libc::geteuid();
-        if current_uid == 0 {
-            println!("Running as root user.");
-        } else {
+        if current_uid != 0 {
             println!("Running as user with UID: {}", current_uid);
-            panic!("Run as root/sudo! ...");
+            println!("Run as root/sudo! ...");
+            return LinuxExitCode::EErr(1);
         }
     }
+
     let terminal = ratatui::init();
+    let result = terminal.size();
+    match result {
+        Err(e) => {
+            println!("Failed to get terminal size: {:#}", e);
+            return LinuxExitCode::EErr(1);
+        }
+        Ok(s) => {
+            if s.height < 25 || s.width < 80 {
+                print!("Terminal is too small, need a size of at least 25x80!");
+                return LinuxExitCode::EErr(1);
+            }
+        }
+    }
+
     let app_result = lvmapp::LvmApp::new().run(terminal);
     ratatui::restore();
-    app_result
+    match app_result {
+        Ok(_) => return LinuxExitCode::EOk,
+        Err(e) => {
+            println!("Error: {:#}", e);
+            return LinuxExitCode::EErr(1);
+        }
+    }
 }
