@@ -177,7 +177,7 @@ pub fn create_lv(
         ) != 1
         {
             // true
-            let result: Result<String, &'static str> = Err("Failed to create LV");
+            let result: Result<String, &'static str> = Err("Failed to create LV.");
             return result;
         }
 
@@ -189,7 +189,7 @@ pub fn create_lv(
         //panic!("res is {} and message is {}", res, message);
     };
 
-    Ok(String::from("Created LV"))
+    Ok(String::from("Created LV."))
 }
 
 pub fn get_lvs() -> Vec<LvmLvData> {

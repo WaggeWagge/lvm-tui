@@ -1,11 +1,15 @@
 pub mod lvview;
 pub mod popup;
 pub mod res;
+pub mod statusbar;
 pub mod vgview;
 
 use color_eyre::Result;
 
-use Constraint::{Length, Min};
+use std::collections::HashMap;
+use std::sync::Mutex;
+
+use Constraint::{Length, Max, Min};
 use ratatui::style::Stylize;
 use ratatui::text::Span;
 use ratatui::{
@@ -22,10 +26,105 @@ use ratatui::{
 
 use unicode_width::UnicodeWidthStr;
 
+use crate::lvmapp::statusbar::StatusBar;
 use crate::{
     lvm::{self},
     lvmapp::{res::Colors, vgview::VgInfoView},
 };
+
+struct Status {
+    last_result: Option<String>,
+}
+impl Status {
+    pub fn set_status(&mut self, str: &str) {
+        self.last_result = Some(str.to_string());
+    }
+
+    pub fn status(&mut self) -> String {
+        if self.last_result.is_none() {
+            self.last_result = Some(String::from("Ok"));
+        }
+
+        self.last_result.clone().unwrap()
+    }
+}
+
+static STATUS: Mutex<Status> = Mutex::new(Status { last_result: None });
+
+/// An event type.
+#[derive(PartialEq, Eq, Hash, Clone)]
+pub enum LvmEvent {
+    LVCreated,
+    LVDeleted,
+    LVMGenUpdate,
+}
+
+pub trait Observer {
+    //
+    // Inform provider we have changed state.
+    //
+    fn notify_provider(&self)
+    where
+        Self: Sized;
+    //
+    // Invoked when provider informs about state change.
+    //
+    fn state_changed(&self);
+ 
+}
+
+pub trait Provider<'a> {
+    //
+    // Observers will be notified of state_change, when
+    // notify_change is invoked.
+    //
+    fn register<T: Observer>(&'a mut self, e_type: LvmEvent, o: &'a T)
+    where
+        T: Observer + 'static,  Self: Sized;
+    //
+    // Inform of a change.
+    //
+    fn notify_change(&self, e_type: LvmEvent);
+
+    //
+    // Unsub...
+    //
+    fn unregister<T: Observer>(&mut self, e_type: LvmEvent, o: T)
+    where
+        T: Observer + 'static,
+        Self: Sized;
+}
+
+#[derive(Default)]
+pub struct LvmMonitorProvider<'a> {    
+    events: HashMap<LvmEvent, Vec<Box<&'a dyn Observer>>>,
+}
+
+impl <'a>Provider<'a>  for LvmMonitorProvider<'a>  {
+    fn register<T: Observer>(&'a mut self, e_type: LvmEvent, obs: &'a T)    
+    {
+        self.events.entry(e_type.clone()).or_default();
+        self.events.get_mut(&e_type).unwrap().push(Box::new(obs));
+    }
+
+    fn notify_change(&self, e_type: LvmEvent) {
+        let obs = self.events.get(&e_type).unwrap();
+        for o in obs.iter() {
+            o.state_changed();
+        }
+    }
+
+    fn unregister<T: Observer>(&mut self, _e_type: LvmEvent, _usub: T)
+    where
+        T: Observer + 'static,
+    {
+        //    self.events.get_mut(&e_type)
+        //        .unwrap()
+        //        .retain(|&x| x != usub);
+        // Need to implement/hash the observer somehow.
+        todo!("Implement");
+    }
+}
 
 struct VgTableData {
     vg_name: String,
@@ -248,8 +347,8 @@ impl<'a> LvmApp<'a> {
                     if key.kind == KeyEventKind::Press {
                         match key.code {
                             KeyCode::Esc => self.view_type = ViewType::VgOverview,
-                            KeyCode::Char('j') | KeyCode::Down => vg_info_view.next_lvrow(),
-                            KeyCode::Char('k') | KeyCode::Up => vg_info_view.previous_lvrow(),
+                            KeyCode::Down => vg_info_view.next_lvrow(),
+                            KeyCode::Up => vg_info_view.previous_lvrow(),
                             KeyCode::F(7) => {
                                 self.view_type = ViewType::LvNew;
                                 self.lv_new_view = Some(lvview::LvNewView::new(
@@ -265,11 +364,17 @@ impl<'a> LvmApp<'a> {
                     if key.kind == KeyEventKind::Press {
                         match key.code {
                             _ => {
-                                if lv_new_view.handle_events(&key) {
-                                    // done,
-                                    self.view_type = ViewType::VgInfo; // "back"
-                                    self.lv_new_view = None;
-                                    // TODO, update status bar with any result?
+                                match lv_new_view.handle_events(&key) {
+                                    Ok(true) => {
+                                        // done,
+                                        self.view_type = ViewType::VgInfo; // "back"
+                                        self.lv_new_view = None;
+                                    }
+                                    Ok(false) => (),
+                                    Err(e) => {
+                                        // Error handled in view, panic if for some reason get here
+                                        panic!("{e}");
+                                    }
                                 }
                             }
                         }
@@ -282,23 +387,32 @@ impl<'a> LvmApp<'a> {
     // Draws widgets and views depending on view type.
     // Data needed (in self) expected to have been initialized beforhand in e.g. run (handleEvent)
     fn draw(&mut self, frame: &mut Frame) {
-        let vertical = &Layout::vertical([Constraint::Min(5), Constraint::Length(2)]);
-        let outer_layout = vertical.split(frame.area());
-        self.set_colors();
-
-        let table_block = Block::default()
+        let app_area = frame.area();
+        let aab = Block::default()
             .border_style(Style::new().fg(self.colors.block_border))
             .bg(self.colors.buffer_bg)
             .title_top(Line::raw(self.title.to_string()))
             .borders(Borders::ALL);
+        frame.render_widget(aab, app_area);
+
+        let vertical = &Layout::vertical([Constraint::Min(5), Constraint::Length(2)])
+            .horizontal_margin(1)
+            .vertical_margin(1);
+        let outer_layout = vertical.split(frame.area());
+        self.set_colors();
+
+        let table_block = Block::default().bg(self.colors.buffer_bg);
 
         // What to draw, ...
         if self.view_type == ViewType::VgOverview {
-            self.render_table(table_block, frame, outer_layout[0]);
-            self.render_scrollbar(frame, outer_layout[0]);
+            // Inner layout for table
+            let inner_layout = &Layout::vertical([Min(15)]).margin(1);
+            let [table_area] = inner_layout.areas(outer_layout[0]);
+            self.render_table(table_block, frame, table_area);
+            self.render_scrollbar(frame, table_area);
         } else if self.view_type == ViewType::VgInfo {
             // inner layout to hold vginfo
-            let inner_layout = &Layout::vertical([Length(8), Min(15), Min(5)]).margin(1);
+            let inner_layout = &Layout::vertical([Length(8), Min(15), Max(10)]).margin(1);
             let vg_info_layout: [Rect; 3] = inner_layout.areas(outer_layout[0]);
             frame.render_widget(table_block, outer_layout[0]);
             let vg_view = self.vg_info_view.as_mut().unwrap();
@@ -410,6 +524,7 @@ impl<'a> LvmApp<'a> {
         let new = Span::from("New").style(s2);
 
         let line = Line::from(vec![esq, quit, tab, tabtxt, spc, msec, f6, save, f7, new]);
+        let w = line.width() as u16;
 
         let info_footer = Paragraph::new(line)
             .style(
@@ -419,7 +534,18 @@ impl<'a> LvmApp<'a> {
             )
             .centered()
             .block(Block::default());
-        frame.render_widget(info_footer, area);
+
+        let layout = Layout::horizontal([Length(w), Min(10)])
+            .horizontal_margin(1)
+            .spacing(2);
+
+        let [action_area, status_area] = layout.areas(area);
+
+        frame.render_widget(info_footer, action_area);
+
+        let status = STATUS.lock().unwrap().status().clone();
+        let sb = StatusBar::new(self.colors.clone()).content(status);
+        frame.render_widget(sb, status_area);
     }
 }
 
@@ -452,4 +578,75 @@ fn constraint_len_calculator(items: &[VgTableData]) -> (u16, u16, u16) {
 
     #[allow(clippy::cast_possible_truncation)]
     (vgname_len as u16, pvname_len as u16, lvname_len as u16)
+}
+
+
+#[cfg(test)]
+mod tests {
+    use crate::lvmapp::{LvmEvent, LvmMonitorProvider, Observer, Provider};
+
+    pub struct TestObserver  {    
+        //provider :  &'a dyn Provider,
+        pub state : bool,
+    }
+
+    impl <'a>TestObserver{
+        //  fn register<T: Observer>(&mut self, e_type: LvmEvent, o: T)
+        //pub fn  new<T: Provider>(p: &'a T) -> Self
+        //where
+        //T: Provider + 'static,
+        //{ 
+        //    Self {
+        //        provider: p,
+        //        state: false,
+        //    }
+        //}
+
+         pub fn new() -> Self { 
+            Self {                
+                state: false,
+            }
+        }
+    }
+
+    impl Observer for TestObserver {
+        fn notify_provider(&self)
+        where
+            Self: Sized {
+            //self.provider.notify_change(super::LvmEvent::LVCreated);
+        }
+    
+        fn state_changed(&self) {
+            println!("Got state_changed notification");
+        }
+    }
+
+    #[derive(Default)]
+    pub struct App<'a> {
+        provider: LvmMonitorProvider<'a>,
+    }
+
+    impl <'a> App <'a>{
+        pub fn events(&'a mut self) -> &'a mut LvmMonitorProvider<'a> {
+            &mut self.provider
+        }
+    }
+
+    #[test]
+    fn test_provider() {
+        let mut app = App::default();
+
+        let observer = TestObserver::new();
+        let observer2 = TestObserver::new();
+        
+        app.events().register(LvmEvent::LVCreated, &observer);
+        
+        {
+            app.events().register(LvmEvent::LVCreated, &observer2);
+        }
+        
+        observer.notify_provider();
+
+        //provider.notify_change(LvmEvent::LVCreated);
+    }
 }

@@ -1,3 +1,5 @@
+use std::fmt::format;
+
 use crossterm::event::KeyEvent;
 use ratatui::{
     Frame,
@@ -13,6 +15,7 @@ use tui_widget_list::{ListBuilder, ListState, ListView, ScrollAxis};
 use Constraint::{Length, Max};
 
 use crate::lvmapp::{
+    STATUS,
     popup::ConfPopup,
     res::{self, Colors},
 };
@@ -443,7 +446,7 @@ impl<'a> LvNewView<'a> {
     //
     // handle events related to this view. If done here return true, e.g if "back" or "save".
     //
-    pub fn handle_events(&mut self, key: &KeyEvent) -> bool {
+    pub fn handle_events(&mut self, key: &KeyEvent) -> Result<bool, &'static str> {
         if key.kind == KeyEventKind::Press {
             if key.kind == KeyEventKind::Press {
                 match key.code {
@@ -493,9 +496,11 @@ impl<'a> LvNewView<'a> {
                     KeyCode::Esc => {
                         if self.popup_save {
                             // do nothing e.g stay in this view, reset popup flag.
+                            STATUS.lock().unwrap().set_status("Lv creation cancelled.");
+
                             self.popup_save = false;
                         } else {
-                            return true; // Done in this view.
+                            return Ok(true); // Done in this view.
                         }
                     }
                     KeyCode::Enter => {
@@ -514,11 +519,15 @@ impl<'a> LvNewView<'a> {
                                 lvm::create_lv(lv_name, vg_name, size, segtype, &pv_list);
                             match lv_c_res {
                                 Ok(_) => {
-                                    return true; // Done here
+                                    let str = String::from("Created LV ");
+                                    let str = str + lv_name;
+
+                                    STATUS.lock().unwrap().set_status(str.as_str());
+                                    return Ok(true); // Done here
                                 }
-                                Err(_) => {
-                                    // Todo, error popup or status message
-                                    return false;
+                                Err(e) => {
+                                    STATUS.lock().unwrap().set_status(e);
+                                    // Nothing to do but indicate error and press on...
                                 }
                             }
                         }
@@ -528,7 +537,7 @@ impl<'a> LvNewView<'a> {
             }
         }
 
-        return false;
+        return Ok(false);
     }
 
     fn render_size_opt(&mut self, frame: &mut Frame, rect: &mut Rect) {
