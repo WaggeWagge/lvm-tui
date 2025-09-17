@@ -1,11 +1,13 @@
 pub mod lvview;
 pub mod popup;
 pub mod res;
+pub mod statusbar;
 pub mod vgview;
 
 use color_eyre::Result;
+use std::sync::Mutex;
 
-use Constraint::{Length, Min};
+use Constraint::{Length, Max, Min};
 use ratatui::style::Stylize;
 use ratatui::text::Span;
 use ratatui::{
@@ -22,10 +24,30 @@ use ratatui::{
 
 use unicode_width::UnicodeWidthStr;
 
+use crate::lvmapp::statusbar::StatusBar;
 use crate::{
     lvm::{self},
     lvmapp::{res::Colors, vgview::VgInfoView},
 };
+
+struct Status {
+    last_result: Option<String>,
+}
+impl Status {
+    pub fn set_status(&mut self, str: &str) {
+        self.last_result = Some(str.to_string());
+    }
+
+    pub fn status(&mut self) -> String {
+        if self.last_result.is_none() {
+            self.last_result = Some(String::from("Ok"));
+        }
+
+        self.last_result.clone().unwrap()
+    }
+}
+
+static STATUS: Mutex<Status> = Mutex::new(Status { last_result: None });
 
 struct VgTableData {
     vg_name: String,
@@ -64,64 +86,13 @@ pub struct LvmApp<'a> {
     title: String,
     vg_info_view: Option<VgInfoView>,
     lv_new_view: Option<lvview::LvNewView<'a>>,
+    refresh_lvm_data: bool,
 }
 
 impl<'a> LvmApp<'a> {
     pub fn new() -> Self {
-        let vg_list = lvm::get_vgs();
-        let pv_list = lvm::get_pvs();
-        let lv_list = lvm::get_lvs();
-
         let mut vgs = Vec::<VgTableData>::new();
-
-        for vg_name in vg_list {
-            let pvs_in_vg: Vec<String> = lvm::find_pvs_by_vg(&vg_name, &pv_list);
-            let mut rows = Vec::<VgTableData>::new();
-
-            for pv_name in pvs_in_vg {
-                let vg_table_item: VgTableData = VgTableData {
-                    vg_name: vg_name.clone(),
-                    pv_name: pv_name.clone(),
-                    lv_name: String::from(""),
-                };
-                rows.push(vg_table_item);
-            }
-
-            let lvs_in_vg: Vec<String> = lvm::find_lvs_by_vg(&vg_name, &lv_list);
-            for lv_name in lvs_in_vg {
-                // Go though existing rows, if find space i.e. "", update row,
-                // if no empty lv_names remaining, add new row.
-                if !rows.last().unwrap().lv_name.eq("") {
-                    // Add new
-                    let row: VgTableData = VgTableData {
-                        vg_name: vg_name.clone(),
-                        pv_name: String::from(""),
-                        lv_name: lv_name.clone(),
-                    };
-                    rows.push(row);
-                } else {
-                    // Update existing
-                    for row in rows.iter_mut() {
-                        if row.lv_name.eq("") {
-                            row.lv_name = lv_name.clone();
-                            break;
-                        }
-                    }
-                }
-            }
-
-            // If no match, put row with vgname only
-            if rows.len() < 1 {
-                let row: VgTableData = VgTableData {
-                    vg_name: vg_name.clone(),
-                    pv_name: String::from(""),
-                    lv_name: String::from(""),
-                };
-                vgs.push(row);
-            } else {
-                vgs.append(&mut rows);
-            }
-        }
+        fetch_data(&mut vgs);
 
         let initial_cnt_len = match vgs.len() {
             // dont * with 0
@@ -144,7 +115,29 @@ impl<'a> LvmApp<'a> {
             title: String::from(res::TITLE),
             vg_info_view: None,
             lv_new_view: None,
+            refresh_lvm_data: true,
         }
+    }
+
+    // For constructed views, refresh data
+    // Main view and vgview.
+    pub fn refresh_data(&mut self) {
+        let mut vgs = Vec::<VgTableData>::new();
+        fetch_data(&mut vgs);
+        self.vgd_longest_item_lens = constraint_len_calculator(&vgs);
+        self.items = vgs;
+
+        if self.vg_info_view.is_some() {
+            self.vg_info_view.as_mut().unwrap().fetch_data();
+        }
+    }
+
+    pub fn trigger_lvm_refresh(&mut self) {
+        self.refresh_lvm_data = true;
+    }
+
+    pub fn clear_flags(&mut self) {
+        self.refresh_lvm_data = false;
     }
 
     pub fn next_row(&mut self) {
@@ -225,6 +218,7 @@ impl<'a> LvmApp<'a> {
     pub fn run(mut self, mut terminal: DefaultTerminal) -> Result<()> {
         loop {
             terminal.draw(|frame| self.draw(frame))?;
+            self.clear_flags();
 
             if let Event::Key(key) = event::read()? {
                 if self.view_type == ViewType::VgOverview {
@@ -247,9 +241,12 @@ impl<'a> LvmApp<'a> {
                     let vg_info_view = self.vg_info_view.as_mut().unwrap();
                     if key.kind == KeyEventKind::Press {
                         match key.code {
-                            KeyCode::Esc => self.view_type = ViewType::VgOverview,
-                            KeyCode::Char('j') | KeyCode::Down => vg_info_view.next_lvrow(),
-                            KeyCode::Char('k') | KeyCode::Up => vg_info_view.previous_lvrow(),
+                            KeyCode::Esc => {
+                                self.view_type = ViewType::VgOverview;
+                                self.vg_info_view = None;
+                            }
+                            KeyCode::Down => vg_info_view.next_lvrow(),
+                            KeyCode::Up => vg_info_view.previous_lvrow(),
                             KeyCode::F(7) => {
                                 self.view_type = ViewType::LvNew;
                                 self.lv_new_view = Some(lvview::LvNewView::new(
@@ -265,40 +262,62 @@ impl<'a> LvmApp<'a> {
                     if key.kind == KeyEventKind::Press {
                         match key.code {
                             _ => {
-                                if lv_new_view.handle_events(&key) {
-                                    // done,
-                                    self.view_type = ViewType::VgInfo; // "back"
-                                    self.lv_new_view = None;
-                                    // TODO, update status bar with any result?
+                                match lv_new_view.handle_events(&key) {
+                                    Ok(true) => {
+                                        // done,
+                                        self.view_type = ViewType::VgInfo; // "back"
+                                        if lv_new_view.lvm_changed() {
+                                            self.trigger_lvm_refresh();
+                                        }
+                                        self.lv_new_view = None;
+                                    }
+                                    Ok(false) => (),
+                                    Err(e) => {
+                                        // Error handled in view, panic if for some reason get here
+                                        panic!("{e}");
+                                    }
                                 }
                             }
                         }
                     }
                 }
             }
-        }
+
+            if self.refresh_lvm_data {
+                self.refresh_data();
+            }
+        } // loop
     }
 
     // Draws widgets and views depending on view type.
     // Data needed (in self) expected to have been initialized beforhand in e.g. run (handleEvent)
     fn draw(&mut self, frame: &mut Frame) {
-        let vertical = &Layout::vertical([Constraint::Min(5), Constraint::Length(2)]);
-        let outer_layout = vertical.split(frame.area());
-        self.set_colors();
-
-        let table_block = Block::default()
+        let app_area = frame.area();
+        let aab = Block::default()
             .border_style(Style::new().fg(self.colors.block_border))
             .bg(self.colors.buffer_bg)
             .title_top(Line::raw(self.title.to_string()))
             .borders(Borders::ALL);
+        frame.render_widget(aab, app_area);
+
+        let vertical = &Layout::vertical([Constraint::Min(5), Constraint::Length(2)])
+            .horizontal_margin(1)
+            .vertical_margin(1);
+        let outer_layout = vertical.split(frame.area());
+        self.set_colors();
+
+        let table_block = Block::default().bg(self.colors.buffer_bg);
 
         // What to draw, ...
         if self.view_type == ViewType::VgOverview {
-            self.render_table(table_block, frame, outer_layout[0]);
-            self.render_scrollbar(frame, outer_layout[0]);
+            // Inner layout for table
+            let inner_layout = &Layout::vertical([Min(15)]).margin(1);
+            let [table_area] = inner_layout.areas(outer_layout[0]);
+            self.render_table(table_block, frame, table_area);
+            self.render_scrollbar(frame, table_area);
         } else if self.view_type == ViewType::VgInfo {
             // inner layout to hold vginfo
-            let inner_layout = &Layout::vertical([Length(8), Min(15), Min(5)]).margin(1);
+            let inner_layout = &Layout::vertical([Length(8), Min(15), Max(10)]).margin(1);
             let vg_info_layout: [Rect; 3] = inner_layout.areas(outer_layout[0]);
             frame.render_widget(table_block, outer_layout[0]);
             let vg_view = self.vg_info_view.as_mut().unwrap();
@@ -410,6 +429,7 @@ impl<'a> LvmApp<'a> {
         let new = Span::from("New").style(s2);
 
         let line = Line::from(vec![esq, quit, tab, tabtxt, spc, msec, f6, save, f7, new]);
+        let w = line.width() as u16;
 
         let info_footer = Paragraph::new(line)
             .style(
@@ -419,7 +439,73 @@ impl<'a> LvmApp<'a> {
             )
             .centered()
             .block(Block::default());
-        frame.render_widget(info_footer, area);
+
+        let layout = Layout::horizontal([Length(w), Min(10)])
+            .horizontal_margin(1)
+            .spacing(2);
+
+        let [action_area, status_area] = layout.areas(area);
+
+        frame.render_widget(info_footer, action_area);
+
+        let status = STATUS.lock().unwrap().status().clone();
+        let sb = StatusBar::new(self.colors.clone()).content(status);
+        frame.render_widget(sb, status_area);
+    }
+}
+
+fn fetch_data(vgs: &mut Vec<VgTableData>) {
+    let vg_list = lvm::get_vgs();
+    let pv_list = lvm::get_pvs();
+    let lv_list = lvm::get_lvs();
+
+    for vg_name in vg_list {
+        let pvs_in_vg: Vec<String> = lvm::find_pvs_by_vg(&vg_name, &pv_list);
+        let mut rows = Vec::<VgTableData>::new();
+
+        for pv_name in pvs_in_vg {
+            let vg_table_item: VgTableData = VgTableData {
+                vg_name: vg_name.clone(),
+                pv_name: pv_name.clone(),
+                lv_name: String::from(""),
+            };
+            rows.push(vg_table_item);
+        }
+
+        let lvs_in_vg: Vec<String> = lvm::find_lvs_by_vg(&vg_name, &lv_list);
+        for lv_name in lvs_in_vg {
+            // Go though existing rows, if find space i.e. "", update row,
+            // if no empty lv_names remaining, add new row.
+            if !rows.last().unwrap().lv_name.eq("") {
+                // Add new
+                let row: VgTableData = VgTableData {
+                    vg_name: vg_name.clone(),
+                    pv_name: String::from(""),
+                    lv_name: lv_name.clone(),
+                };
+                rows.push(row);
+            } else {
+                // Update existing
+                for row in rows.iter_mut() {
+                    if row.lv_name.eq("") {
+                        row.lv_name = lv_name.clone();
+                        break;
+                    }
+                }
+            }
+        }
+
+        // If no match, put row with vgname only
+        if rows.len() < 1 {
+            let row: VgTableData = VgTableData {
+                vg_name: vg_name.clone(),
+                pv_name: String::from(""),
+                lv_name: String::from(""),
+            };
+            vgs.push(row);
+        } else {
+            vgs.append(&mut rows);
+        }
     }
 }
 
@@ -452,4 +538,13 @@ fn constraint_len_calculator(items: &[VgTableData]) -> (u16, u16, u16) {
 
     #[allow(clippy::cast_possible_truncation)]
     (vgname_len as u16, pvname_len as u16, lvname_len as u16)
+}
+
+#[cfg(test)]
+mod tests {
+
+    #[test]
+    fn something() {
+        ////////////////////
+    }
 }

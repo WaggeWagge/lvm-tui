@@ -13,14 +13,12 @@ use tui_widget_list::{ListBuilder, ListState, ListView, ScrollAxis};
 use Constraint::{Length, Max};
 
 use crate::lvmapp::{
+    STATUS,
     popup::ConfPopup,
     res::{self, Colors},
 };
 
-use crate::lvm::{self, LvmLvData, LvmVgData};
-
-pub const C_LVM_INFO_TEXT: [&str; 1] =
-    ["info: (TAB) toggle fields | (Enter) create | (ESQ|q) cancel"];
+use crate::lvm::{self};
 
 pub struct ListItem {
     text: String,
@@ -68,8 +66,9 @@ pub struct LvNewView<'a> {
     lvname: InputField,
     lvsize: InputField,
     lvsize_opt_state: ListState,
+    lvsize_opts: [&'a str; 5], // TODO Get rid of this, use constant, forces 'a...
     lvsegtype_state: ListState,
-    lvsegtype_opts: [&'a str; 5],
+    lvsegtype_opts: [&'a str; 5], // TODO Get rid of this, use constant, forces 'a...
     mirror_nrdevs: InputField,
     raid_nrdevs: InputField,
     mirror_ss: InputField,
@@ -79,6 +78,7 @@ pub struct LvNewView<'a> {
     sel_list_state: ListState,
     avail_list_state: ListState,
     colors: Colors,
+    lvm_changed_flag: bool,
 }
 
 impl<'a> LvNewView<'a> {
@@ -98,6 +98,7 @@ impl<'a> LvNewView<'a> {
                 pos: 0,
             },
             lvsize_opt_state: ListState::default(),
+            lvsize_opts: ["M", "G", "%FREE", "%VG", "T"],
             sel_list_state: ListState::default(),
             avail_list_state: ListState::default(),
             vg_name: vg_name.clone(),
@@ -125,7 +126,12 @@ impl<'a> LvNewView<'a> {
                 value: String::from(""),
                 pos: 0,
             },
+            lvm_changed_flag: false,
         }
+    }
+
+    pub fn lvm_changed(&mut self) -> bool {
+        self.lvm_changed_flag
     }
 
     fn handle_nfocus_pvsel(&mut self) {
@@ -443,7 +449,7 @@ impl<'a> LvNewView<'a> {
     //
     // handle events related to this view. If done here return true, e.g if "back" or "save".
     //
-    pub fn handle_events(&mut self, key: &KeyEvent) -> bool {
+    pub fn handle_events(&mut self, key: &KeyEvent) -> Result<bool, &'static str> {
         if key.kind == KeyEventKind::Press {
             if key.kind == KeyEventKind::Press {
                 match key.code {
@@ -457,31 +463,7 @@ impl<'a> LvNewView<'a> {
                     },
                     KeyCode::Char(to_insert) => {
                         let c = to_insert;
-                        match self.focus {
-                            Focus::LvSize => {
-                                if c >= '0' && c <= '9' || c == '.' {
-                                    self.insert(&to_insert);
-                                }
-                            }
-                            Focus::SegTypeMirrorSsize
-                            | Focus::SegTypeMirrorStripes
-                            | Focus::SegTypeRaidSsize
-                            | Focus::SegTypeRaidStripes => {
-                                if c >= '0' && c <= '9' {
-                                    self.insert(&to_insert);
-                                }
-                            }
-                            _ => {
-                                if (c >= 'a' && c <= 'z')
-                                    || (c >= 'A' && c <= 'Z')
-                                    || c == '_'
-                                    || c == '-'
-                                    || (c >= '0' && c <= '9')
-                                {
-                                    self.insert(&to_insert);
-                                }
-                            }
-                        }
+                        self.handle_keycode_char(c);
                     }
                     KeyCode::Right => self.right(),
                     KeyCode::Left => self.left(),
@@ -493,32 +475,27 @@ impl<'a> LvNewView<'a> {
                     KeyCode::Esc => {
                         if self.popup_save {
                             // do nothing e.g stay in this view, reset popup flag.
+                            STATUS.lock().unwrap().set_status("Lv creation cancelled.");
                             self.popup_save = false;
                         } else {
-                            return true; // Done in this view.
+                            return Ok(true); // Done in this view.
                         }
                     }
                     KeyCode::Enter => {
                         if self.popup_save {
                             self.popup_save = false;
                             // well save/create lv
-                            let size = self.lvsize.value.parse::<u64>().unwrap();
-                            let size = size * 1000; // kb
-                            let segtype = &self.lvsegtype_opts
-                                [self.lvsegtype_state.selected.unwrap()]
-                            .to_string();
-                            let lv_name = &self.lvname.value;
-                            let vg_name = &self.vg_name;
-                            let pv_list = Vec::<String>::new();
-                            let lv_c_res =
-                                lvm::create_lv(lv_name, vg_name, size, segtype, &pv_list);
+                            let lv_c_res = self.handle_create_lv();
                             match lv_c_res {
                                 Ok(_) => {
-                                    return true; // Done here
+                                    self.lvm_changed_flag = true;
+                                    let str = String::from("Created LV: ") + &self.lvname.value;
+                                    STATUS.lock().unwrap().set_status(str.as_str());
+                                    return Ok(true); // Done here
                                 }
-                                Err(_) => {
-                                    // Todo, error popup or status message
-                                    return false;
+                                Err(e) => {
+                                    STATUS.lock().unwrap().set_status(e);
+                                    // Nothing to do but indicate error and press on...
                                 }
                             }
                         }
@@ -528,11 +505,51 @@ impl<'a> LvNewView<'a> {
             }
         }
 
-        return false;
+        return Ok(false);
+    }
+
+    fn handle_keycode_char(&mut self, c: char) {
+        match self.focus {
+            Focus::LvSize => {
+                if c >= '0' && c <= '9' || c == '.' {
+                    self.insert(&c);
+                }
+            }
+            Focus::SegTypeMirrorSsize
+            | Focus::SegTypeMirrorStripes
+            | Focus::SegTypeRaidSsize
+            | Focus::SegTypeRaidStripes => {
+                if c >= '0' && c <= '9' {
+                    self.insert(&c);
+                }
+            }
+            _ => {
+                if (c >= 'a' && c <= 'z')
+                    || (c >= 'A' && c <= 'Z')
+                    || c == '_'
+                    || c == '-'
+                    || (c >= '0' && c <= '9')
+                {
+                    self.insert(&c);
+                }
+            }
+        }
+    }
+
+    fn handle_create_lv(&mut self) -> Result<String, &'static str> {
+        let size = self.lvsize.value.parse::<u64>().unwrap();
+        let size_opt = self.lvsize_opts[self.lvsize_opt_state.selected.unwrap()];
+        let calc_size_multi = calc_size_multi(&size_opt.to_string());
+        let size = size * calc_size_multi;
+
+        let segtype = &self.lvsegtype_opts[self.lvsegtype_state.selected.unwrap()].to_string();        
+        let lv_name = &self.lvname.value;
+        let vg_name = &self.vg_name;
+        let pv_list = Vec::<String>::new();
+        return lvm::create_lv(lv_name, vg_name, size, segtype, &pv_list);
     }
 
     fn render_size_opt(&mut self, frame: &mut Frame, rect: &mut Rect) {
-        let size_opts = ["M", "G", "%FREE", "%VG", "T"];
         rect.height = 1;
         let list_style = match self.focus {
             // IF we have focus, highlight
@@ -549,7 +566,7 @@ impl<'a> LvNewView<'a> {
         };
 
         let builder = ListBuilder::new(|context| {
-            let mut item = ListItem::new(size_opts[context.index]);
+            let mut item = ListItem::new(self.lvsize_opts[context.index]);
             if context.is_selected {
                 item.style = Style::new().fg(self.colors.selected_cell_style_fg);
             }
@@ -558,7 +575,7 @@ impl<'a> LvNewView<'a> {
         });
 
         let block = Block::default().padding(Padding::horizontal(1));
-        let item_count = size_opts.len();
+        let item_count = self.lvsize_opts.len();
         let list = ListView::new(builder, item_count)
             .scroll_axis(ScrollAxis::Vertical)
             .block(block)
@@ -959,5 +976,17 @@ impl<'a> LvNewView<'a> {
         }
 
         frame.render_stateful_widget(sel_list, sel_pv_area, sel_state);
+    }
+}
+
+//
+//  lvsize_opts: ["M", "G", "%FREE", "%VG", "T"],
+//
+fn calc_size_multi(size_opt: &String) -> u64 {
+    match size_opt.as_str() {
+        "M" => 1000 * 1000,
+        "G" => 1000 * 1000 * 1000,
+        "T" => 1000 * 1000 * 1000 * 1000,
+        _ => 1000000, // M
     }
 }
