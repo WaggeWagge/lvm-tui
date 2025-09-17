@@ -1,10 +1,10 @@
 use std::{
     ffi::{CStr, CString},
-    ptr, result,
+    ptr, 
 };
 
 use crate::lvm::lvmbind::{
-    _GError, BDLVMSEGdata, GError, GErrorInitFunc, bd_lvm_init, bd_lvm_lvcreate,
+    BDLVMSEGdata, GError, bd_lvm_init, bd_lvm_lvcreate,
     bd_lvm_lvdata_free, bd_lvm_lvs_tree, bd_lvm_pvdata_free, bd_lvm_pvs, bd_lvm_vgdata_free,
     bd_lvm_vginfo, bd_lvm_vgs,
 };
@@ -156,7 +156,7 @@ pub fn create_lv(
     vg: &String,
     size: u64,
     segtype: &String,
-    pvl: &Vec<String>,
+    _pvl: &Vec<String>,
 ) -> Result<String, &'static str> {
     let vg_name = vg.as_ptr() as *const i8;
     let lv_name = lv.as_ptr() as *const i8;

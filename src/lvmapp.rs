@@ -5,8 +5,6 @@ pub mod statusbar;
 pub mod vgview;
 
 use color_eyre::Result;
-
-use std::collections::HashMap;
 use std::sync::Mutex;
 
 use Constraint::{Length, Max, Min};
@@ -51,81 +49,6 @@ impl Status {
 
 static STATUS: Mutex<Status> = Mutex::new(Status { last_result: None });
 
-/// An event type.
-#[derive(PartialEq, Eq, Hash, Clone)]
-pub enum LvmEvent {
-    LVCreated,
-    LVDeleted,
-    LVMGenUpdate,
-}
-
-pub trait Observer {
-    //
-    // Inform provider we have changed state.
-    //
-    fn notify_provider(&self)
-    where
-        Self: Sized;
-    //
-    // Invoked when provider informs about state change.
-    //
-    fn state_changed(&self);
- 
-}
-
-pub trait Provider<'a> {
-    //
-    // Observers will be notified of state_change, when
-    // notify_change is invoked.
-    //
-    fn register<T: Observer>(&'a mut self, e_type: LvmEvent, o: &'a T)
-    where
-        T: Observer + 'static,  Self: Sized;
-    //
-    // Inform of a change.
-    //
-    fn notify_change(&self, e_type: LvmEvent);
-
-    //
-    // Unsub...
-    //
-    fn unregister<T: Observer>(&mut self, e_type: LvmEvent, o: T)
-    where
-        T: Observer + 'static,
-        Self: Sized;
-}
-
-#[derive(Default)]
-pub struct LvmMonitorProvider<'a> {    
-    events: HashMap<LvmEvent, Vec<Box<&'a dyn Observer>>>,
-}
-
-impl <'a>Provider<'a>  for LvmMonitorProvider<'a>  {
-    fn register<T: Observer>(&'a mut self, e_type: LvmEvent, obs: &'a T)    
-    {
-        self.events.entry(e_type.clone()).or_default();
-        self.events.get_mut(&e_type).unwrap().push(Box::new(obs));
-    }
-
-    fn notify_change(&self, e_type: LvmEvent) {
-        let obs = self.events.get(&e_type).unwrap();
-        for o in obs.iter() {
-            o.state_changed();
-        }
-    }
-
-    fn unregister<T: Observer>(&mut self, _e_type: LvmEvent, _usub: T)
-    where
-        T: Observer + 'static,
-    {
-        //    self.events.get_mut(&e_type)
-        //        .unwrap()
-        //        .retain(|&x| x != usub);
-        // Need to implement/hash the observer somehow.
-        todo!("Implement");
-    }
-}
-
 struct VgTableData {
     vg_name: String,
     pv_name: String,
@@ -163,64 +86,13 @@ pub struct LvmApp<'a> {
     title: String,
     vg_info_view: Option<VgInfoView>,
     lv_new_view: Option<lvview::LvNewView<'a>>,
+    refresh_lvm_data: bool,
 }
 
 impl<'a> LvmApp<'a> {
     pub fn new() -> Self {
-        let vg_list = lvm::get_vgs();
-        let pv_list = lvm::get_pvs();
-        let lv_list = lvm::get_lvs();
-
         let mut vgs = Vec::<VgTableData>::new();
-
-        for vg_name in vg_list {
-            let pvs_in_vg: Vec<String> = lvm::find_pvs_by_vg(&vg_name, &pv_list);
-            let mut rows = Vec::<VgTableData>::new();
-
-            for pv_name in pvs_in_vg {
-                let vg_table_item: VgTableData = VgTableData {
-                    vg_name: vg_name.clone(),
-                    pv_name: pv_name.clone(),
-                    lv_name: String::from(""),
-                };
-                rows.push(vg_table_item);
-            }
-
-            let lvs_in_vg: Vec<String> = lvm::find_lvs_by_vg(&vg_name, &lv_list);
-            for lv_name in lvs_in_vg {
-                // Go though existing rows, if find space i.e. "", update row,
-                // if no empty lv_names remaining, add new row.
-                if !rows.last().unwrap().lv_name.eq("") {
-                    // Add new
-                    let row: VgTableData = VgTableData {
-                        vg_name: vg_name.clone(),
-                        pv_name: String::from(""),
-                        lv_name: lv_name.clone(),
-                    };
-                    rows.push(row);
-                } else {
-                    // Update existing
-                    for row in rows.iter_mut() {
-                        if row.lv_name.eq("") {
-                            row.lv_name = lv_name.clone();
-                            break;
-                        }
-                    }
-                }
-            }
-
-            // If no match, put row with vgname only
-            if rows.len() < 1 {
-                let row: VgTableData = VgTableData {
-                    vg_name: vg_name.clone(),
-                    pv_name: String::from(""),
-                    lv_name: String::from(""),
-                };
-                vgs.push(row);
-            } else {
-                vgs.append(&mut rows);
-            }
-        }
+        fetch_data(&mut vgs);
 
         let initial_cnt_len = match vgs.len() {
             // dont * with 0
@@ -243,7 +115,29 @@ impl<'a> LvmApp<'a> {
             title: String::from(res::TITLE),
             vg_info_view: None,
             lv_new_view: None,
+            refresh_lvm_data: true,
         }
+    }
+
+    // For constructed views, refresh data
+    // Main view and vgview.
+    pub fn refresh_data(&mut self) {
+        let mut vgs = Vec::<VgTableData>::new();
+        fetch_data(&mut vgs);
+        self.vgd_longest_item_lens = constraint_len_calculator(&vgs);
+        self.items = vgs;
+
+        if self.vg_info_view.is_some() {
+            self.vg_info_view.as_mut().unwrap().fetch_data();
+        }
+    }
+
+    pub fn trigger_lvm_refresh(&mut self) {
+        self.refresh_lvm_data = true;
+    }
+
+    pub fn clear_flags(&mut self) {
+        self.refresh_lvm_data = false;
     }
 
     pub fn next_row(&mut self) {
@@ -324,6 +218,7 @@ impl<'a> LvmApp<'a> {
     pub fn run(mut self, mut terminal: DefaultTerminal) -> Result<()> {
         loop {
             terminal.draw(|frame| self.draw(frame))?;
+            self.clear_flags();
 
             if let Event::Key(key) = event::read()? {
                 if self.view_type == ViewType::VgOverview {
@@ -346,7 +241,10 @@ impl<'a> LvmApp<'a> {
                     let vg_info_view = self.vg_info_view.as_mut().unwrap();
                     if key.kind == KeyEventKind::Press {
                         match key.code {
-                            KeyCode::Esc => self.view_type = ViewType::VgOverview,
+                            KeyCode::Esc => {
+                                self.view_type = ViewType::VgOverview;
+                                self.vg_info_view = None;
+                            }
                             KeyCode::Down => vg_info_view.next_lvrow(),
                             KeyCode::Up => vg_info_view.previous_lvrow(),
                             KeyCode::F(7) => {
@@ -368,6 +266,9 @@ impl<'a> LvmApp<'a> {
                                     Ok(true) => {
                                         // done,
                                         self.view_type = ViewType::VgInfo; // "back"
+                                        if lv_new_view.lvm_changed() {
+                                            self.trigger_lvm_refresh();
+                                        }
                                         self.lv_new_view = None;
                                     }
                                     Ok(false) => (),
@@ -381,7 +282,11 @@ impl<'a> LvmApp<'a> {
                     }
                 }
             }
-        }
+
+            if self.refresh_lvm_data {
+                self.refresh_data();
+            }
+        } // loop
     }
 
     // Draws widgets and views depending on view type.
@@ -549,6 +454,61 @@ impl<'a> LvmApp<'a> {
     }
 }
 
+fn fetch_data(vgs: &mut Vec<VgTableData>) {
+    let vg_list = lvm::get_vgs();
+    let pv_list = lvm::get_pvs();
+    let lv_list = lvm::get_lvs();
+
+    for vg_name in vg_list {
+        let pvs_in_vg: Vec<String> = lvm::find_pvs_by_vg(&vg_name, &pv_list);
+        let mut rows = Vec::<VgTableData>::new();
+
+        for pv_name in pvs_in_vg {
+            let vg_table_item: VgTableData = VgTableData {
+                vg_name: vg_name.clone(),
+                pv_name: pv_name.clone(),
+                lv_name: String::from(""),
+            };
+            rows.push(vg_table_item);
+        }
+
+        let lvs_in_vg: Vec<String> = lvm::find_lvs_by_vg(&vg_name, &lv_list);
+        for lv_name in lvs_in_vg {
+            // Go though existing rows, if find space i.e. "", update row,
+            // if no empty lv_names remaining, add new row.
+            if !rows.last().unwrap().lv_name.eq("") {
+                // Add new
+                let row: VgTableData = VgTableData {
+                    vg_name: vg_name.clone(),
+                    pv_name: String::from(""),
+                    lv_name: lv_name.clone(),
+                };
+                rows.push(row);
+            } else {
+                // Update existing
+                for row in rows.iter_mut() {
+                    if row.lv_name.eq("") {
+                        row.lv_name = lv_name.clone();
+                        break;
+                    }
+                }
+            }
+        }
+
+        // If no match, put row with vgname only
+        if rows.len() < 1 {
+            let row: VgTableData = VgTableData {
+                vg_name: vg_name.clone(),
+                pv_name: String::from(""),
+                lv_name: String::from(""),
+            };
+            vgs.push(row);
+        } else {
+            vgs.append(&mut rows);
+        }
+    }
+}
+
 fn constraint_len_calculator(items: &[VgTableData]) -> (u16, u16, u16) {
     // If 0 number of items return sane defaul i.e. 10 for min width
     //if items.len() < 1 {
@@ -580,73 +540,11 @@ fn constraint_len_calculator(items: &[VgTableData]) -> (u16, u16, u16) {
     (vgname_len as u16, pvname_len as u16, lvname_len as u16)
 }
 
-
 #[cfg(test)]
 mod tests {
-    use crate::lvmapp::{LvmEvent, LvmMonitorProvider, Observer, Provider};
-
-    pub struct TestObserver  {    
-        //provider :  &'a dyn Provider,
-        pub state : bool,
-    }
-
-    impl <'a>TestObserver{
-        //  fn register<T: Observer>(&mut self, e_type: LvmEvent, o: T)
-        //pub fn  new<T: Provider>(p: &'a T) -> Self
-        //where
-        //T: Provider + 'static,
-        //{ 
-        //    Self {
-        //        provider: p,
-        //        state: false,
-        //    }
-        //}
-
-         pub fn new() -> Self { 
-            Self {                
-                state: false,
-            }
-        }
-    }
-
-    impl Observer for TestObserver {
-        fn notify_provider(&self)
-        where
-            Self: Sized {
-            //self.provider.notify_change(super::LvmEvent::LVCreated);
-        }
-    
-        fn state_changed(&self) {
-            println!("Got state_changed notification");
-        }
-    }
-
-    #[derive(Default)]
-    pub struct App<'a> {
-        provider: LvmMonitorProvider<'a>,
-    }
-
-    impl <'a> App <'a>{
-        pub fn events(&'a mut self) -> &'a mut LvmMonitorProvider<'a> {
-            &mut self.provider
-        }
-    }
 
     #[test]
-    fn test_provider() {
-        let mut app = App::default();
-
-        let observer = TestObserver::new();
-        let observer2 = TestObserver::new();
-        
-        app.events().register(LvmEvent::LVCreated, &observer);
-        
-        {
-            app.events().register(LvmEvent::LVCreated, &observer2);
-        }
-        
-        observer.notify_provider();
-
-        //provider.notify_change(LvmEvent::LVCreated);
+    fn something() {
+        ////////////////////
     }
 }
