@@ -12,7 +12,10 @@ use ratatui::{
 
 use crate::{
     lvm::{self, LvmLvData, LvmVgData},
-    lvmapp::res::{self, Colors},
+    lvmapp::{
+        View, ViewType,
+        res::{self, Colors},
+    },
 };
 
 pub struct VgInfoView {
@@ -23,6 +26,21 @@ pub struct VgInfoView {
     pub pvdev_list: Option<Vec<String>>,
     scroll_state: ScrollbarState,
     colors: Colors,
+}
+
+impl View for VgInfoView {
+    fn refresh_data(&mut self) {
+        self.fetch_data();
+    }
+
+    fn view_type(&self) -> ViewType {
+        return ViewType::VgInfo;
+    }
+
+    fn handle_events(&mut self, _key: &crossterm::event::KeyEvent) -> Result<bool, &'static str> {
+        // Noop,
+        return Ok(true);
+    }
 }
 
 impl VgInfoView {

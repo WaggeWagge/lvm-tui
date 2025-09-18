@@ -1,12 +1,11 @@
 use std::{
     ffi::{CStr, CString},
-    ptr, 
+    ptr,
 };
 
 use crate::lvm::lvmbind::{
-    BDLVMSEGdata, GError, bd_lvm_init, bd_lvm_lvcreate,
-    bd_lvm_lvdata_free, bd_lvm_lvs_tree, bd_lvm_pvdata_free, bd_lvm_pvs, bd_lvm_vgdata_free,
-    bd_lvm_vginfo, bd_lvm_vgs,
+    BDLVMSEGdata, GError, bd_lvm_init, bd_lvm_lvcreate, bd_lvm_lvdata_free, bd_lvm_lvs_tree,
+    bd_lvm_pvdata_free, bd_lvm_pvs, bd_lvm_vgdata_free, bd_lvm_vginfo, bd_lvm_vgs,
 };
 
 mod lvmbind {

@@ -4,7 +4,10 @@ pub mod res;
 pub mod statusbar;
 pub mod vgview;
 
-use color_eyre::Result;
+
+//use color_eyre::Result;
+//use color_eyre::eyre::Ok;
+use crossterm::event::KeyEvent;
 use std::sync::Mutex;
 
 use Constraint::{Length, Max, Min};
@@ -24,6 +27,7 @@ use ratatui::{
 
 use unicode_width::UnicodeWidthStr;
 
+use crate::lvmapp::lvview::LvNewView;
 use crate::lvmapp::statusbar::StatusBar;
 use crate::{
     lvm::{self},
@@ -49,6 +53,16 @@ impl Status {
 
 static STATUS: Mutex<Status> = Mutex::new(Status { last_result: None });
 
+pub trait View {
+    fn view_type(&self) -> ViewType;
+    fn refresh_data(&mut self);
+    //
+    // handle events related to the view. 
+    // Return indicates if done in view and can move along, get on with it then...
+    // false, stay...
+    fn handle_events(&mut self, key: &KeyEvent) -> core::result::Result<bool, &'static str>;
+}
+
 struct VgTableData {
     vg_name: String,
     pv_name: String,
@@ -68,7 +82,7 @@ impl VgTableData {
 }
 
 #[derive(PartialEq)]
-enum ViewType {
+pub enum ViewType {
     VgOverview,
     VgInfo,
     LvNew,
@@ -85,11 +99,103 @@ pub struct LvmApp<'a> {
     sel_vg_name: String,
     title: String,
     vg_info_view: Option<VgInfoView>,
-    lv_new_view: Option<lvview::LvNewView<'a>>,
+    lv_new_view: Option<LvNewView<'a>>,
     refresh_lvm_data: bool,
 }
 
-impl<'a> LvmApp<'a> {
+impl View for LvmApp<'_> {
+    // For constructed views, refresh data
+    // Main view and vgview.
+    fn refresh_data(&mut self) {
+        let mut vgs = Vec::<VgTableData>::new();
+        fetch_data(&mut vgs);
+        self.vgd_longest_item_lens = constraint_len_calculator(&vgs);
+        self.items = vgs;
+
+        if self.vg_info_view.is_some() {
+            self.vg_info_view.as_mut().unwrap().refresh_data();
+        }
+        STATUS.lock().unwrap().set_status("Refreshed lvm info.");
+    }
+
+    fn view_type(&self) -> ViewType {
+        match self.view_type {
+            ViewType::VgOverview => ViewType::VgOverview,
+            ViewType::VgInfo => ViewType::VgInfo,
+            ViewType::LvNew => ViewType::LvNew,
+        }
+    }
+
+    fn handle_events(&mut self, key: &KeyEvent) -> core::result::Result<bool, &'static str> {
+        if self.view_type == ViewType::VgOverview {
+            if key.kind == KeyEventKind::Press {
+                match key.code {
+                    KeyCode::Enter => self.acton_cell(),
+                    KeyCode::Esc => {
+                        // if in main window, quit
+                        self.view_type = ViewType::VgOverview;
+                        return Ok(true);
+                    }
+                    KeyCode::Down => self.next_row(),
+                    KeyCode::Up => self.previous_row(),
+                    KeyCode::Right => self.next_column(),
+                    KeyCode::Left => self.previous_column(),
+                    _ => {}
+                }
+            }
+        } else if self.view_type == ViewType::VgInfo {               
+                let vg_info_view = self.vg_info_view.as_mut().unwrap();
+                if key.kind == KeyEventKind::Press {
+                    match key.code {
+                        KeyCode::Esc => {
+                            self.view_type = ViewType::VgOverview;
+                            self.vg_info_view = None;
+                            return  Ok(false);
+                        }
+                        KeyCode::Down => vg_info_view.next_lvrow(),
+                        KeyCode::Up => vg_info_view.previous_lvrow(),
+                        KeyCode::F(7) => {
+                            self.view_type = ViewType::LvNew;
+                            self.lv_new_view = Some(lvview::LvNewView::new(
+                                &self.sel_vg_name,
+                                vg_info_view.pvdev_list.as_ref().unwrap(),
+                            ));
+                        }
+                        _ => {}
+                    }
+                }
+            
+        } else if self.view_type == ViewType::LvNew {
+                let lv_new_view = self.lv_new_view.as_mut().unwrap();
+                if key.kind == KeyEventKind::Press {
+                    match key.code {
+                        _ => {
+                            match lv_new_view.handle_events(&key) {
+                                Ok(true) => {
+                                    // done,
+                                    self.view_type = ViewType::VgInfo; // "back"
+                                    if lv_new_view.lvm_changed() {
+                                        self.trigger_lvm_refresh();
+                                    }
+                                    self.lv_new_view = None;
+                                }
+                                Ok(false) => (),
+                                Err(e) => {
+                                    // Error handled in view, panic if for some reason get here
+                                    panic!("{e}");
+                                }
+                            }
+                        }
+                    }
+                }
+        }
+
+        return Ok(false);
+        
+    }
+}
+
+impl LvmApp<'_> {
     pub fn new() -> Self {
         let mut vgs = Vec::<VgTableData>::new();
         fetch_data(&mut vgs);
@@ -119,24 +225,11 @@ impl<'a> LvmApp<'a> {
         }
     }
 
-    // For constructed views, refresh data
-    // Main view and vgview.
-    pub fn refresh_data(&mut self) {
-        let mut vgs = Vec::<VgTableData>::new();
-        fetch_data(&mut vgs);
-        self.vgd_longest_item_lens = constraint_len_calculator(&vgs);
-        self.items = vgs;
-
-        if self.vg_info_view.is_some() {
-            self.vg_info_view.as_mut().unwrap().fetch_data();
-        }
-    }
-
-    pub fn trigger_lvm_refresh(&mut self) {
+    fn trigger_lvm_refresh(&mut self) {
         self.refresh_lvm_data = true;
     }
 
-    pub fn clear_flags(&mut self) {
+    fn clear_flags(&mut self) {
         self.refresh_lvm_data = false;
     }
 
@@ -197,7 +290,7 @@ impl<'a> LvmApp<'a> {
                         self.view_type = ViewType::VgInfo;
                         self.sel_vg_name = item.vg_name.clone();
                         self.vg_info_view = Some(VgInfoView::new(&self.sel_vg_name));
-                        self.vg_info_view.as_mut().unwrap().fetch_data();
+                        self.vg_info_view.as_mut().unwrap().refresh_data();
                     }
                     item.vg_name.clone()
                 }
@@ -215,71 +308,16 @@ impl<'a> LvmApp<'a> {
     }
 
     // Handle events for the whole app. Also responsible for init of 'views'.
-    pub fn run(mut self, mut terminal: DefaultTerminal) -> Result<()> {
+    pub fn run(mut self, mut terminal: DefaultTerminal) -> color_eyre::Result<()> {
         loop {
             terminal.draw(|frame| self.draw(frame))?;
             self.clear_flags();
 
             if let Event::Key(key) = event::read()? {
-                if self.view_type == ViewType::VgOverview {
-                    if key.kind == KeyEventKind::Press {
-                        match key.code {
-                            KeyCode::Enter => self.acton_cell(),
-                            KeyCode::Esc => {
-                                // if in main window, quit
-                                self.view_type = ViewType::VgOverview;
-                                return Ok(());
-                            }
-                            KeyCode::Down => self.next_row(),
-                            KeyCode::Up => self.previous_row(),
-                            KeyCode::Right => self.next_column(),
-                            KeyCode::Left => self.previous_column(),
-                            _ => {}
-                        }
-                    }
-                } else if self.view_type == ViewType::VgInfo {
-                    let vg_info_view = self.vg_info_view.as_mut().unwrap();
-                    if key.kind == KeyEventKind::Press {
-                        match key.code {
-                            KeyCode::Esc => {
-                                self.view_type = ViewType::VgOverview;
-                                self.vg_info_view = None;
-                            }
-                            KeyCode::Down => vg_info_view.next_lvrow(),
-                            KeyCode::Up => vg_info_view.previous_lvrow(),
-                            KeyCode::F(7) => {
-                                self.view_type = ViewType::LvNew;
-                                self.lv_new_view = Some(lvview::LvNewView::new(
-                                    &self.sel_vg_name,
-                                    vg_info_view.pvdev_list.as_ref().unwrap(),
-                                ));
-                            }
-                            _ => {}
-                        }
-                    }
-                } else if self.view_type == ViewType::LvNew {
-                    let lv_new_view = self.lv_new_view.as_mut().unwrap();
-                    if key.kind == KeyEventKind::Press {
-                        match key.code {
-                            _ => {
-                                match lv_new_view.handle_events(&key) {
-                                    Ok(true) => {
-                                        // done,
-                                        self.view_type = ViewType::VgInfo; // "back"
-                                        if lv_new_view.lvm_changed() {
-                                            self.trigger_lvm_refresh();
-                                        }
-                                        self.lv_new_view = None;
-                                    }
-                                    Ok(false) => (),
-                                    Err(e) => {
-                                        // Error handled in view, panic if for some reason get here
-                                        panic!("{e}");
-                                    }
-                                }
-                            }
-                        }
-                    }
+                match self.handle_events(&key) {
+                    Ok(true) => return color_eyre::eyre::Ok(()),
+                    Ok(false) => (), // keep going
+                    Err(_) => todo!("throw back error..."),
                 }
             }
 

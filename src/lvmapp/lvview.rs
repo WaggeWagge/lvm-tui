@@ -13,7 +13,7 @@ use tui_widget_list::{ListBuilder, ListState, ListView, ScrollAxis};
 use Constraint::{Length, Max};
 
 use crate::lvmapp::{
-    STATUS,
+    STATUS, View, ViewType,
     popup::ConfPopup,
     res::{self, Colors},
 };
@@ -37,6 +37,78 @@ impl ListItem {
 impl Widget for ListItem {
     fn render(self, area: Rect, buf: &mut Buffer) {
         Line::from(self.text).style(self.style).render(area, buf);
+    }
+}
+
+impl View for LvNewView<'_> {
+    fn refresh_data(&mut self) {
+        // noop
+    }
+
+    fn view_type(&self) -> ViewType {
+        return ViewType::LvNew;
+    }
+
+    //
+    // handle events related to this view. If done here return true, e.g if "back" or "save".
+    //
+    fn handle_events(&mut self, key: &KeyEvent) -> core::result::Result<bool, &'static str> {
+        if key.kind == KeyEventKind::Press {
+            if key.kind == KeyEventKind::Press {
+                match key.code {
+                    KeyCode::Tab => self.next_focus(),
+                    KeyCode::BackTab => self.prev_focus(),
+                    KeyCode::Backspace => self.remove(),
+                    KeyCode::Char(' ') => match self.focus {
+                        Focus::LvPvAv => self.move_availpv(),
+                        Focus::LvPvSel => self.move_selpv(),
+                        _ => {}
+                    },
+                    KeyCode::Char(to_insert) => {
+                        let c = to_insert;
+                        self.handle_keycode_char(c);
+                    }
+                    KeyCode::Right => self.right(),
+                    KeyCode::Left => self.left(),
+                    KeyCode::Down => self.down(),
+                    KeyCode::Up => self.up(),
+                    KeyCode::F(6) => {
+                        self.save_popup();
+                    }
+                    KeyCode::Esc => {
+                        if self.popup_save {
+                            // do nothing e.g stay in this view, reset popup flag.
+                            STATUS.lock().unwrap().set_status("Lv creation cancelled.");
+                            self.popup_save = false;
+                        } else {
+                            return Ok(true); // Done in this view.
+                        }
+                    }
+                    KeyCode::Enter => {
+                        if self.popup_save {
+                            self.popup_save = false;
+                            // well save/create lv
+                            let lv_c_res = self.handle_create_lv();
+                            match lv_c_res {
+                                Ok(_) => {
+                                    self.lvm_changed_flag = true;
+                                    let str = String::from("Created LV: ") + &self.lvname.value;
+                                    STATUS.lock().unwrap().set_status(str.as_str());
+                                    return Ok(true); // Done here
+                                }
+                                Err(e) => {
+                                    STATUS.lock().unwrap().set_status(e);
+                                    // Nothing to do but indicate error and press on...
+                                }
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        return Ok(false);
     }
 }
 
@@ -446,68 +518,6 @@ impl<'a> LvNewView<'a> {
             .add_modifier(Modifier::UNDERLINED)
     }
 
-    //
-    // handle events related to this view. If done here return true, e.g if "back" or "save".
-    //
-    pub fn handle_events(&mut self, key: &KeyEvent) -> Result<bool, &'static str> {
-        if key.kind == KeyEventKind::Press {
-            if key.kind == KeyEventKind::Press {
-                match key.code {
-                    KeyCode::Tab => self.next_focus(),
-                    KeyCode::BackTab => self.prev_focus(),
-                    KeyCode::Backspace => self.remove(),
-                    KeyCode::Char(' ') => match self.focus {
-                        Focus::LvPvAv => self.move_availpv(),
-                        Focus::LvPvSel => self.move_selpv(),
-                        _ => {}
-                    },
-                    KeyCode::Char(to_insert) => {
-                        let c = to_insert;
-                        self.handle_keycode_char(c);
-                    }
-                    KeyCode::Right => self.right(),
-                    KeyCode::Left => self.left(),
-                    KeyCode::Down => self.down(),
-                    KeyCode::Up => self.up(),
-                    KeyCode::F(6) => {
-                        self.save_popup();
-                    }
-                    KeyCode::Esc => {
-                        if self.popup_save {
-                            // do nothing e.g stay in this view, reset popup flag.
-                            STATUS.lock().unwrap().set_status("Lv creation cancelled.");
-                            self.popup_save = false;
-                        } else {
-                            return Ok(true); // Done in this view.
-                        }
-                    }
-                    KeyCode::Enter => {
-                        if self.popup_save {
-                            self.popup_save = false;
-                            // well save/create lv
-                            let lv_c_res = self.handle_create_lv();
-                            match lv_c_res {
-                                Ok(_) => {
-                                    self.lvm_changed_flag = true;
-                                    let str = String::from("Created LV: ") + &self.lvname.value;
-                                    STATUS.lock().unwrap().set_status(str.as_str());
-                                    return Ok(true); // Done here
-                                }
-                                Err(e) => {
-                                    STATUS.lock().unwrap().set_status(e);
-                                    // Nothing to do but indicate error and press on...
-                                }
-                            }
-                        }
-                    }
-                    _ => {}
-                }
-            }
-        }
-
-        return Ok(false);
-    }
-
     fn handle_keycode_char(&mut self, c: char) {
         match self.focus {
             Focus::LvSize => {
@@ -542,7 +552,7 @@ impl<'a> LvNewView<'a> {
         let calc_size_multi = calc_size_multi(&size_opt.to_string());
         let size = size * calc_size_multi;
 
-        let segtype = &self.lvsegtype_opts[self.lvsegtype_state.selected.unwrap()].to_string();        
+        let segtype = &self.lvsegtype_opts[self.lvsegtype_state.selected.unwrap()].to_string();
         let lv_name = &self.lvname.value;
         let vg_name = &self.vg_name;
         let pv_list = Vec::<String>::new();
