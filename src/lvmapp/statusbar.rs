@@ -1,7 +1,7 @@
 use derive_setters::Setters;
 use ratatui::{
     buffer::Buffer,
-    layout::{Rect},
+    layout::Rect,
     style::Style,
     text::{Line, Span, Text, ToSpan},
     widgets::{Paragraph, Widget, Wrap},
