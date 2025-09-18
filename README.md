@@ -2,7 +2,7 @@
 Lvm tui/gui written in rust/ratatui (https://ratatui.rs/). Read-only/listing existing LV/VG/PVs.
 
 <img width="824" height="713" alt="Screenshot From 2025-09-18 19-42-06" src="https://github.com/user-attachments/assets/c34fbd07-1fca-4e3f-89e5-7a0691b84115" />
-<img width="824" height="713" alt="Screenshot From 2025-09-18 19-41-39" src="https://github.com/user-attachments/assets/e9083d42-d06f-497e-88c7-0ce32f871682" />
+
 
 
 Build and run
