@@ -219,11 +219,7 @@ impl VgInfoView {
             .bg(self.colors.header_bg);
         let selected_row_style = Style::default()
             .add_modifier(Modifier::REVERSED)
-            .fg(self.colors.selected_row_style_fg);
-        let selected_col_style = Style::default().fg(self.colors.selected_column_style_fg);
-        let selected_cell_style = Style::default()
-            .add_modifier(Modifier::REVERSED)
-            .fg(self.colors.selected_cell_style_fg);
+            .fg(self.colors.selected_row_style_fg);       
 
         let header = ["LV", "size(g)", "attr", "segtype", "uuid"]
             .into_iter()
@@ -272,9 +268,7 @@ impl VgInfoView {
             ],
         )
         .header(header)
-        .row_highlight_style(selected_row_style)
-        .column_highlight_style(selected_col_style)
-        .cell_highlight_style(selected_cell_style)
+        .row_highlight_style(selected_row_style)       
         .highlight_symbol(Text::from(vec![
             "".into(),
             bar.into(),

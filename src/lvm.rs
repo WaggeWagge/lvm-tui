@@ -4,8 +4,8 @@ use std::{
 };
 
 use crate::lvm::lvmbind::{
-    BDLVMSEGdata, GError, bd_lvm_init, bd_lvm_lvcreate, bd_lvm_lvdata_free, bd_lvm_lvs_tree,
-    bd_lvm_pvdata_free, bd_lvm_pvs, bd_lvm_vgdata_free, bd_lvm_vginfo, bd_lvm_vgs,
+    _GError, BDLVMSEGdata, GError, bd_lvm_init, bd_lvm_lvcreate, bd_lvm_lvdata_free,
+    bd_lvm_lvs_tree, bd_lvm_pvdata_free, bd_lvm_pvs, bd_lvm_vgdata_free, bd_lvm_vginfo, bd_lvm_vgs,    
 };
 
 mod lvmbind {
@@ -19,8 +19,8 @@ mod lvmbind {
     include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 }
 
-pub struct NameValue {
-    pub name: String,
+pub struct LvmExtraArg {
+    pub opt: String,
     pub value: String,
 }
 
@@ -150,42 +150,57 @@ pub fn get_pvs() -> Vec<LvmPVData> {
     return pv_list;
 }
 
+//
+// Create logical volumne
+//
 pub fn create_lv(
     lv: &String,
     vg: &String,
     size: u64,
     segtype: &String,
-    _pvl: &Vec<String>,
+    pvl: &Vec<String>,
+    extra: &Vec<String>
 ) -> Result<String, &'static str> {
-    let vg_name = vg.as_ptr() as *const i8;
-    let lv_name = lv.as_ptr() as *const i8;
+    
+    let vg_cstr = CString::new(vg.as_str()).expect("CString::new fault");
+    let vg_cstr = vg_cstr.as_ptr();
 
-    let segtype = segtype.as_ptr() as *const i8;
-    let pv_list: *mut *const i8 = ptr::null_mut(); // TODO get pvl into this
+    let lv_cstr = CString::new(lv.as_str()).expect("CString::new fault");
+    let lv_cstr = lv_cstr.as_ptr();
+
+    let sg_cstr = CString::new(segtype.as_str()).expect("CString::new fault");
+    let sg_cstr = sg_cstr.as_ptr();        
+
+    let pv_list: *mut *const i8 = ptr::null_mut();
 
     unsafe {
-        let error: *mut *mut GError = ptr::null_mut(); // BUG TODO, "NULL" error pointer not filled with error info. Remain null.
+        let error: *mut _GError = ptr::null_mut();
+        let mut error = Box::new(error);
+        let error = &mut *error;
+
         if bd_lvm_lvcreate(
-            vg_name,
-            lv_name,
+            vg_cstr,
+            lv_cstr,
             size,
-            segtype,
+            sg_cstr,
             pv_list,
             ptr::null_mut(),
             error,
         ) != 1
         {
-            // true
-            let result: Result<String, &'static str> = Err("Failed to create LV.");
-            return result;
+            if !error.is_null() {
+                let ptr_gerror = *error;
+                let message = CStr::from_ptr((*ptr_gerror).message)
+                    .to_str()
+                    .clone()
+                    .unwrap();
+                // free the error ptr
+                //g_error_free(*error);  // no, Box free when go out of scope.                            
+                return Err(message);
+            } else {
+                return Err("Failed to create LV. Error unknown...");
+            }
         }
-
-        //let e = *error;
-        //let message = CStr::from_ptr((*e).message)
-        //            .to_str()
-        //            .unwrap()
-        //            .to_string();
-        //panic!("res is {} and message is {}", res, message);
     };
 
     Ok(String::from("Created LV."))
