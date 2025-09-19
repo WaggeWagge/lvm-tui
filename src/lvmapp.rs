@@ -36,7 +36,7 @@ use crate::{
 };
 
 
-const STATUS_RESET_INTERVAL: u64 = 15;
+const STATUS_RESET_INTERVAL: u64 = 30;
 
 struct Status {
     last_result: Option<String>,
