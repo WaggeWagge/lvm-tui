@@ -549,6 +549,11 @@ impl<'a> LvNewView<'a> {
     fn handle_create_lv(&mut self) -> Result<String, &'static str> {
         let size = self.lvsize.value.parse::<u64>().unwrap();
         let size_opt = self.lvsize_opts[self.lvsize_opt_state.selected.unwrap()];
+        match size_opt {
+            "%FREE" => todo!("%FREE"),
+            "%VG" => todo!("%VG"),
+            _ => ()
+        }
         let calc_size_multi = calc_size_multi(&size_opt.to_string());
         let size = size * calc_size_multi;
 
@@ -556,7 +561,7 @@ impl<'a> LvNewView<'a> {
         let lv_name = &self.lvname.value;
         let vg_name = &self.vg_name;
         let pv_list = Vec::<String>::new();
-        return lvm::create_lv(lv_name, vg_name, size, segtype, &pv_list);
+        return lvm::create_lv(lv_name, vg_name, size, segtype, &pv_list, &Vec::<String>::new());
     }
 
     fn render_size_opt(&mut self, frame: &mut Frame, rect: &mut Rect) {
@@ -774,12 +779,15 @@ impl<'a> LvNewView<'a> {
             let s1 = Style::new().white().bold();
             let lvtxt = Span::from(&self.lvname.value).style(s1);
             let vgtxt = Span::from(&self.vg_name).style(s1);
+            let segtype = &self.lvsegtype_opts[self.lvsegtype_state.selected.unwrap()].to_string();
             let line = Line::from(vec![
                 Span::from("You are about to create a new logical volumn '"),
                 lvtxt,
                 Span::from("' in volumn group '"),
                 vgtxt,
-                Span::from("'"),
+                Span::from("'. Segtype '"),
+                Span::from(segtype),
+                Span::from("'."), 
             ]);
 
             let popup = ConfPopup::new(Colors::new(&res::PALETTES[0]))

@@ -4,11 +4,12 @@ pub mod res;
 pub mod statusbar;
 pub mod vgview;
 
-
 //use color_eyre::Result;
 //use color_eyre::eyre::Ok;
 use crossterm::event::KeyEvent;
+use core::time;
 use std::sync::Mutex;
+use std::thread::{self};
 
 use Constraint::{Length, Max, Min};
 use ratatui::style::Stylize;
@@ -34,6 +35,9 @@ use crate::{
     lvmapp::{res::Colors, vgview::VgInfoView},
 };
 
+
+const STATUS_RESET_INTERVAL: u64 = 30;
+
 struct Status {
     last_result: Option<String>,
 }
@@ -57,7 +61,7 @@ pub trait View {
     fn view_type(&self) -> ViewType;
     fn refresh_data(&mut self);
     //
-    // handle events related to the view. 
+    // handle events related to the view.
     // Return indicates if done in view and can move along, get on with it then...
     // false, stay...
     fn handle_events(&mut self, key: &KeyEvent) -> core::result::Result<bool, &'static str>;
@@ -143,55 +147,53 @@ impl View for LvmApp<'_> {
                     _ => {}
                 }
             }
-        } else if self.view_type == ViewType::VgInfo {               
-                let vg_info_view = self.vg_info_view.as_mut().unwrap();
-                if key.kind == KeyEventKind::Press {
-                    match key.code {
-                        KeyCode::Esc => {
-                            self.view_type = ViewType::VgOverview;
-                            self.vg_info_view = None;
-                            return  Ok(false);
-                        }
-                        KeyCode::Down => vg_info_view.next_lvrow(),
-                        KeyCode::Up => vg_info_view.previous_lvrow(),
-                        KeyCode::F(7) => {
-                            self.view_type = ViewType::LvNew;
-                            self.lv_new_view = Some(lvview::LvNewView::new(
-                                &self.sel_vg_name,
-                                vg_info_view.pvdev_list.as_ref().unwrap(),
-                            ));
-                        }
-                        _ => {}
+        } else if self.view_type == ViewType::VgInfo {
+            let vg_info_view = self.vg_info_view.as_mut().unwrap();
+            if key.kind == KeyEventKind::Press {
+                match key.code {
+                    KeyCode::Esc => {
+                        self.view_type = ViewType::VgOverview;
+                        self.vg_info_view = None;
+                        return Ok(false);
                     }
+                    KeyCode::Down => vg_info_view.next_lvrow(),
+                    KeyCode::Up => vg_info_view.previous_lvrow(),
+                    KeyCode::F(7) => {
+                        self.view_type = ViewType::LvNew;
+                        self.lv_new_view = Some(lvview::LvNewView::new(
+                            &self.sel_vg_name,
+                            vg_info_view.pvdev_list.as_ref().unwrap(),
+                        ));
+                    }
+                    _ => {}
                 }
-            
+            }
         } else if self.view_type == ViewType::LvNew {
-                let lv_new_view = self.lv_new_view.as_mut().unwrap();
-                if key.kind == KeyEventKind::Press {
-                    match key.code {
-                        _ => {
-                            match lv_new_view.handle_events(&key) {
-                                Ok(true) => {
-                                    // done,
-                                    self.view_type = ViewType::VgInfo; // "back"
-                                    if lv_new_view.lvm_changed() {
-                                        self.trigger_lvm_refresh();
-                                    }
-                                    self.lv_new_view = None;
+            let lv_new_view = self.lv_new_view.as_mut().unwrap();
+            if key.kind == KeyEventKind::Press {
+                match key.code {
+                    _ => {
+                        match lv_new_view.handle_events(&key) {
+                            Ok(true) => {
+                                // done,
+                                self.view_type = ViewType::VgInfo; // "back"
+                                if lv_new_view.lvm_changed() {
+                                    self.trigger_lvm_refresh();
                                 }
-                                Ok(false) => (),
-                                Err(e) => {
-                                    // Error handled in view, panic if for some reason get here
-                                    panic!("{e}");
-                                }
+                                self.lv_new_view = None;
+                            }
+                            Ok(false) => (),
+                            Err(e) => {
+                                // Error handled in view, panic if for some reason get here
+                                panic!("{e}");
                             }
                         }
                     }
                 }
+            }
         }
 
         return Ok(false);
-        
     }
 }
 
@@ -309,6 +311,15 @@ impl LvmApp<'_> {
 
     // Handle events for the whole app. Also responsible for init of 'views'.
     pub fn run(mut self, mut terminal: DefaultTerminal) -> color_eyre::Result<()> {
+        // "clear" status bar every STATUS_RESET_INTERVALs (15).
+        thread::spawn(move || {
+            loop {                            
+                let dur = time::Duration::from_secs(STATUS_RESET_INTERVAL);
+                thread::sleep(dur);
+                STATUS.lock().unwrap().set_status(format!("Ok ({})", STATUS_RESET_INTERVAL).as_str());   
+            }
+        });
+
         loop {
             terminal.draw(|frame| self.draw(frame))?;
             self.clear_flags();
