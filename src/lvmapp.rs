@@ -6,8 +6,8 @@ pub mod vgview;
 
 //use color_eyre::Result;
 //use color_eyre::eyre::Ok;
-use crossterm::event::KeyEvent;
 use core::time;
+use crossterm::event::KeyEvent;
 use std::sync::Mutex;
 use std::thread::{self};
 
@@ -34,7 +34,6 @@ use crate::{
     lvm::{self},
     lvmapp::{res::Colors, vgview::VgInfoView},
 };
-
 
 const STATUS_RESET_INTERVAL: u64 = 30;
 
@@ -313,10 +312,13 @@ impl LvmApp<'_> {
     pub fn run(mut self, mut terminal: DefaultTerminal) -> color_eyre::Result<()> {
         // "clear" status bar every STATUS_RESET_INTERVALs (15).
         thread::spawn(move || {
-            loop {                            
+            loop {
                 let dur = time::Duration::from_secs(STATUS_RESET_INTERVAL);
                 thread::sleep(dur);
-                STATUS.lock().unwrap().set_status(format!("Ok ({})", STATUS_RESET_INTERVAL).as_str());   
+                STATUS
+                    .lock()
+                    .unwrap()
+                    .set_status(format!("Ok ({})", STATUS_RESET_INTERVAL).as_str());
             }
         });
 

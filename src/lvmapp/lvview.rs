@@ -12,10 +12,13 @@ use tui_widget_list::{ListBuilder, ListState, ListView, ScrollAxis};
 
 use Constraint::{Length, Max};
 
-use crate::lvmapp::{
-    STATUS, View, ViewType,
-    popup::ConfPopup,
-    res::{self, Colors},
+use crate::{
+    lvm::LvmExtraArg,
+    lvmapp::{
+        STATUS, View, ViewType,
+        popup::ConfPopup,
+        res::{self, Colors},
+    },
 };
 
 use crate::lvm::{self};
@@ -118,10 +121,9 @@ enum Focus {
     LvSize,
     LvSizeOpt,
     LvSegType,
-    SegTypeRaidStripes,
-    SegTypeRaidSsize,
-    SegTypeMirrorStripes,
-    SegTypeMirrorSsize,
+    SegTypeStripes,
+    SegTypeMirrors,
+    SegTypeSsize,
     LvPvAv,
     LvPvSel,
 }
@@ -140,11 +142,10 @@ pub struct LvNewView<'a> {
     lvsize_opt_state: ListState,
     lvsize_opts: [&'a str; 5], // TODO Get rid of this, use constant, forces 'a...
     lvsegtype_state: ListState,
-    lvsegtype_opts: [&'a str; 5], // TODO Get rid of this, use constant, forces 'a...
-    mirror_nrdevs: InputField,
-    raid_nrdevs: InputField,
-    mirror_ss: InputField,
-    raid_ss: InputField,
+    lvsegtype_opts: [&'a str; 6], // TODO Get rid of this, use constant, forces 'a...
+    mirrors: InputField,
+    stripes: InputField,
+    strips_size: InputField,
     pv_devs_avail: Vec<String>,
     pv_devs_selected: Vec<String>,
     sel_list_state: ListState,
@@ -177,23 +178,18 @@ impl<'a> LvNewView<'a> {
             lvsegtype_state: ListState::default(),
             pv_devs_avail: pvdev_names.to_vec(),
             pv_devs_selected: Vec::new(),
-            lvsegtype_opts: ["linear", "raid0", "raid1", "raid10", "raid5"],
-            mirror_nrdevs: InputField {
+            lvsegtype_opts: ["linear", "raid0", "raid1", "raid10", "raid5", "raid6"],
+            mirrors: InputField {
                 len_max: 2,
                 value: String::from(""),
                 pos: 0,
             },
-            raid_nrdevs: InputField {
-                len_max: 2,
-                value: String::from(""),
-                pos: 0,
-            },
-            mirror_ss: InputField {
+            stripes: InputField {
                 len_max: 6,
                 value: String::from(""),
                 pos: 0,
             },
-            raid_ss: InputField {
+            strips_size: InputField {
                 len_max: 6,
                 value: String::from(""),
                 pos: 0,
@@ -241,11 +237,9 @@ impl<'a> LvNewView<'a> {
 
         match segtype {
             "linear" => self.focus = Focus::LvSegType,
-            "striped" => self.focus = Focus::SegTypeRaidSsize,
-            "raid0" => self.focus = Focus::SegTypeRaidSsize,
-            "raid10" => self.focus = Focus::SegTypeRaidSsize,
-            "raid5" => self.focus = Focus::SegTypeRaidSsize,
-            "raid1" => self.focus = Focus::SegTypeMirrorSsize,
+            "raid0" | "raid5" | "raid6" => self.focus = Focus::SegTypeSsize,
+            "raid10" => self.focus = Focus::SegTypeMirrors,
+            "raid1" => self.focus = Focus::SegTypeMirrors,
             _ => self.focus = Focus::LvSegType,
         }
     }
@@ -266,21 +260,22 @@ impl<'a> LvNewView<'a> {
             Focus::LvSizeOpt => self.focus = Focus::LvSegType,
             Focus::LvSegType => {
                 let segtype = self.lvsegtype_opts[self.lvsegtype_state.selected.unwrap()];
-
                 match segtype {
                     "linear" => self.handle_next_pv_selection(),
-                    "striped" => self.focus = Focus::SegTypeRaidStripes,
-                    "raid0" => self.focus = Focus::SegTypeRaidStripes,
-                    "raid10" => self.focus = Focus::SegTypeRaidStripes,
-                    "raid5" => self.focus = Focus::SegTypeRaidStripes,
-                    "raid1" => self.focus = Focus::SegTypeMirrorStripes,
+                    "raid0" | "raid10" | "raid5" | "raid6" => self.focus = Focus::SegTypeStripes,
+                    "raid1" => self.focus = Focus::SegTypeMirrors,
                     _ => self.handle_next_pv_selection(),
                 }
             }
-            Focus::SegTypeRaidStripes => self.focus = Focus::SegTypeRaidSsize,
-            Focus::SegTypeRaidSsize => self.handle_next_pv_selection(),
-            Focus::SegTypeMirrorStripes => self.focus = Focus::SegTypeMirrorSsize,
-            Focus::SegTypeMirrorSsize => self.handle_next_pv_selection(),
+            Focus::SegTypeStripes => self.focus = Focus::SegTypeSsize,
+            Focus::SegTypeSsize => {
+                let segtype = self.lvsegtype_opts[self.lvsegtype_state.selected.unwrap()];
+                match segtype {
+                    "raid10" => self.focus = Focus::SegTypeMirrors,
+                    _ => self.handle_next_pv_selection(),
+                }
+            }
+            Focus::SegTypeMirrors => self.handle_next_pv_selection(),
             Focus::LvPvAv => self.handle_nfocus_pvsel(),
             Focus::LvPvSel => self.focus = Focus::LvName,
         }
@@ -292,10 +287,15 @@ impl<'a> LvNewView<'a> {
             Focus::LvSize => self.focus = Focus::LvName,
             Focus::LvSizeOpt => self.focus = Focus::LvSize,
             Focus::LvSegType => self.focus = Focus::LvSizeOpt,
-            Focus::SegTypeRaidStripes => self.focus = Focus::LvSegType,
-            Focus::SegTypeRaidSsize => self.focus = Focus::SegTypeRaidStripes,
-            Focus::SegTypeMirrorStripes => self.focus = Focus::LvSegType,
-            Focus::SegTypeMirrorSsize => self.focus = Focus::SegTypeMirrorStripes,
+            Focus::SegTypeStripes => self.focus = Focus::LvSegType,
+            Focus::SegTypeSsize => self.focus = Focus::SegTypeStripes,
+            Focus::SegTypeMirrors => {
+                let segtype = self.lvsegtype_opts[self.lvsegtype_state.selected.unwrap()];
+                match segtype {
+                    "raid10" => self.focus = Focus::SegTypeSsize,
+                    _ => self.focus = Focus::LvSegType,
+                }
+            }
             Focus::LvPvAv => self.prev_segtype_focus(),
             Focus::LvPvSel => self.handle_pfocus_pvsel(),
         }
@@ -315,30 +315,22 @@ impl<'a> LvNewView<'a> {
                     self.lvsize.pos += 1;
                 }
             }
-            Focus::SegTypeMirrorSsize => {
-                if self.mirror_ss.value.len() < self.mirror_ss.len_max {
-                    self.mirror_ss.value.insert(self.mirror_ss.pos, *char);
-                    self.mirror_ss.pos += 1;
+            Focus::SegTypeStripes => {
+                if self.stripes.value.len() < self.stripes.len_max {
+                    self.stripes.value.insert(self.stripes.pos, *char);
+                    self.stripes.pos += 1;
                 }
             }
-            Focus::SegTypeMirrorStripes => {
-                if self.mirror_nrdevs.value.len() < self.mirror_nrdevs.len_max {
-                    self.mirror_nrdevs
-                        .value
-                        .insert(self.mirror_nrdevs.pos, *char);
-                    self.mirror_nrdevs.pos += 1;
+            Focus::SegTypeMirrors => {
+                if self.mirrors.value.len() < self.mirrors.len_max {
+                    self.mirrors.value.insert(self.mirrors.pos, *char);
+                    self.mirrors.pos += 1;
                 }
             }
-            Focus::SegTypeRaidSsize => {
-                if self.raid_ss.value.len() < self.raid_ss.len_max {
-                    self.raid_ss.value.insert(self.raid_ss.pos, *char);
-                    self.raid_ss.pos += 1;
-                }
-            }
-            Focus::SegTypeRaidStripes => {
-                if self.raid_nrdevs.value.len() < self.raid_nrdevs.len_max {
-                    self.raid_nrdevs.value.insert(self.raid_nrdevs.pos, *char);
-                    self.raid_nrdevs.pos += 1;
+            Focus::SegTypeSsize => {
+                if self.strips_size.value.len() < self.strips_size.len_max {
+                    self.strips_size.value.insert(self.strips_size.pos, *char);
+                    self.strips_size.pos += 1;
                 }
             }
             _ => {}
@@ -359,28 +351,22 @@ impl<'a> LvNewView<'a> {
                     self.lvsize.pos -= 1;
                 }
             }
-            Focus::SegTypeMirrorSsize => {
-                if self.mirror_ss.pos > 0 {
-                    self.mirror_ss.value.remove(self.mirror_ss.pos - 1);
-                    self.mirror_ss.pos -= 1;
+            Focus::SegTypeStripes => {
+                if self.stripes.pos > 0 {
+                    self.stripes.value.remove(self.stripes.pos - 1);
+                    self.stripes.pos -= 1;
                 }
             }
-            Focus::SegTypeMirrorStripes => {
-                if self.mirror_nrdevs.pos > 0 {
-                    self.mirror_nrdevs.value.remove(self.mirror_nrdevs.pos - 1);
-                    self.mirror_nrdevs.pos -= 1;
+            Focus::SegTypeSsize => {
+                if self.strips_size.pos > 0 {
+                    self.strips_size.value.remove(self.strips_size.pos - 1);
+                    self.strips_size.pos -= 1;
                 }
             }
-            Focus::SegTypeRaidSsize => {
-                if self.raid_ss.pos > 0 {
-                    self.raid_ss.value.remove(self.raid_ss.pos - 1);
-                    self.raid_ss.pos -= 1;
-                }
-            }
-            Focus::SegTypeRaidStripes => {
-                if self.raid_nrdevs.pos > 0 {
-                    self.raid_nrdevs.value.remove(self.raid_nrdevs.pos - 1);
-                    self.raid_nrdevs.pos -= 1;
+            Focus::SegTypeMirrors => {
+                if self.mirrors.pos > 0 {
+                    self.mirrors.value.remove(self.mirrors.pos - 1);
+                    self.mirrors.pos -= 1;
                 }
             }
             _ => {}
@@ -399,24 +385,19 @@ impl<'a> LvNewView<'a> {
                     self.lvsize.pos -= 1;
                 }
             }
-            Focus::SegTypeMirrorSsize => {
-                if self.mirror_ss.pos > 0 {
-                    self.mirror_ss.pos -= 1;
+            Focus::SegTypeStripes => {
+                if self.stripes.pos > 0 {
+                    self.stripes.pos -= 1;
                 }
             }
-            Focus::SegTypeMirrorStripes => {
-                if self.mirror_nrdevs.pos > 0 {
-                    self.mirror_nrdevs.pos -= 1;
+            Focus::SegTypeMirrors => {
+                if self.mirrors.pos > 0 {
+                    self.mirrors.pos -= 1;
                 }
             }
-            Focus::SegTypeRaidSsize => {
-                if self.raid_ss.pos > 0 {
-                    self.raid_ss.pos -= 1;
-                }
-            }
-            Focus::SegTypeRaidStripes => {
-                if self.raid_nrdevs.pos > 0 {
-                    self.raid_nrdevs.pos -= 1;
+            Focus::SegTypeSsize => {
+                if self.strips_size.pos > 0 {
+                    self.strips_size.pos -= 1;
                 }
             }
             _ => {}
@@ -435,27 +416,20 @@ impl<'a> LvNewView<'a> {
                     self.lvsize.pos += 1;
                 }
             }
-            Focus::SegTypeMirrorSsize => {
-                if self.mirror_ss.pos > 0 && self.mirror_ss.pos < (self.mirror_ss.value.len()) {
-                    self.mirror_ss.pos += 1;
+            Focus::SegTypeStripes => {
+                if self.stripes.pos > 0 && self.stripes.pos < (self.stripes.value.len()) {
+                    self.stripes.pos += 1;
                 }
             }
-            Focus::SegTypeMirrorStripes => {
-                if self.mirror_nrdevs.pos > 0
-                    && self.mirror_nrdevs.pos < (self.mirror_nrdevs.value.len())
+            Focus::SegTypeMirrors => {
+                if self.mirrors.pos > 0 && self.mirrors.pos < (self.mirrors.value.len()) {
+                    self.mirrors.pos += 1;
+                }
+            }
+            Focus::SegTypeSsize => {
+                if self.strips_size.pos > 0 && self.strips_size.pos < (self.strips_size.value.len())
                 {
-                    self.mirror_nrdevs.pos += 1;
-                }
-            }
-            Focus::SegTypeRaidSsize => {
-                if self.raid_ss.pos > 0 && self.raid_ss.pos < (self.raid_ss.value.len()) {
-                    self.raid_ss.pos += 1;
-                }
-            }
-            Focus::SegTypeRaidStripes => {
-                if self.raid_nrdevs.pos > 0 && self.raid_nrdevs.pos < (self.raid_nrdevs.value.len())
-                {
-                    self.raid_nrdevs.pos += 1;
+                    self.strips_size.pos += 1;
                 }
             }
             _ => {}
@@ -525,10 +499,7 @@ impl<'a> LvNewView<'a> {
                     self.insert(&c);
                 }
             }
-            Focus::SegTypeMirrorSsize
-            | Focus::SegTypeMirrorStripes
-            | Focus::SegTypeRaidSsize
-            | Focus::SegTypeRaidStripes => {
+            Focus::SegTypeMirrors | Focus::SegTypeStripes | Focus::SegTypeSsize => {
                 if c >= '0' && c <= '9' {
                     self.insert(&c);
                 }
@@ -552,7 +523,7 @@ impl<'a> LvNewView<'a> {
         match size_opt {
             "%FREE" => todo!("%FREE"),
             "%VG" => todo!("%VG"),
-            _ => ()
+            _ => (),
         }
         let calc_size_multi = calc_size_multi(&size_opt.to_string());
         let size = size * calc_size_multi;
@@ -560,8 +531,75 @@ impl<'a> LvNewView<'a> {
         let segtype = &self.lvsegtype_opts[self.lvsegtype_state.selected.unwrap()].to_string();
         let lv_name = &self.lvname.value;
         let vg_name = &self.vg_name;
-        let pv_list = Vec::<String>::new();
-        return lvm::create_lv(lv_name, vg_name, size, segtype, &pv_list, &Vec::<String>::new());
+        let mut lvm_extra_args = Vec::<lvm::LvmExtraArg>::new();
+        self.populate_extra_opts(segtype, &mut lvm_extra_args);
+
+        return lvm::create_lv(
+            lv_name,
+            vg_name,
+            size,
+            segtype,
+            &self.pv_devs_selected,
+            &lvm_extra_args,
+        );
+    }
+
+    fn populate_extra_opts(&self, segtype: &String, extra_opts: &mut Vec<lvm::LvmExtraArg>) {
+        match segtype.as_str() {
+            "linear" => (),
+            "raid0" | "raid5" | "raid6" => {
+                // --stripes,  --stripesize
+                if self.stripes.value.len() > 0 {
+                    let stripes = LvmExtraArg {
+                        opt: "stripes".to_string(),
+                        value: self.stripes.value.clone(),
+                    };
+                    extra_opts.push(stripes);
+                }
+                if self.strips_size.value.len() > 0 {
+                    let ss = LvmExtraArg {
+                        opt: "stripesize".to_string(),
+                        value: self.strips_size.value.clone(),
+                    };
+                    extra_opts.push(ss);
+                }
+            }
+            "raid10" => {
+                // --stripes,  --stripesize , --mirrors
+                if self.mirrors.value.len() > 0 {
+                    let mirrors = LvmExtraArg {
+                        opt: "mirrors".to_string(),
+                        value: self.mirrors.value.clone(),
+                    };
+                    extra_opts.push(mirrors);
+                }
+                if self.strips_size.value.len() > 0 {
+                    let ss = LvmExtraArg {
+                        opt: "stripesize".to_string(),
+                        value: self.strips_size.value.clone(),
+                    };
+                    extra_opts.push(ss);
+                }
+                if self.stripes.value.len() > 0 {
+                    let stripes = LvmExtraArg {
+                        opt: "stripes".to_string(),
+                        value: self.stripes.value.clone(),
+                    };
+                    extra_opts.push(stripes);
+                }
+            }
+            "raid1" => {
+                // mirrors,
+                if self.mirrors.value.len() > 0 {
+                    let mirrors = LvmExtraArg {
+                        opt: "mirrors".to_string(),
+                        value: self.mirrors.value.clone(),
+                    };
+                    extra_opts.push(mirrors);
+                }
+            }
+            _ => (),
+        }
     }
 
     fn render_size_opt(&mut self, frame: &mut Frame, rect: &mut Rect) {
@@ -655,7 +693,7 @@ impl<'a> LvNewView<'a> {
             Length(1),
             Length(1),
             Length(1),
-            Length(2),
+            Length(3),
             Length(1),
             Length(10),
         ])
@@ -769,35 +807,58 @@ impl<'a> LvNewView<'a> {
         self.render_pvsel(frame, &mut pv_sel_area);
 
         if self.popup_save {
-            let popup_area = Rect {
-                x: rect.width / 4,
-                y: rect.height / 3,
-                width: rect.width / 2,
-                height: rect.height / 2,
-            };
-            let title = format!("Create {}", self.lvname.value);
-            let s1 = Style::new().white().bold();
-            let lvtxt = Span::from(&self.lvname.value).style(s1);
-            let vgtxt = Span::from(&self.vg_name).style(s1);
-            let segtype = &self.lvsegtype_opts[self.lvsegtype_state.selected.unwrap()].to_string();
-            let line = Line::from(vec![
-                Span::from("You are about to create a new logical volumn '"),
-                lvtxt,
-                Span::from("' in volumn group '"),
-                vgtxt,
-                Span::from("'. Segtype '"),
-                Span::from(segtype),
-                Span::from("'."), 
-            ]);
-
-            let popup = ConfPopup::new(Colors::new(&res::PALETTES[0]))
-                .content(line.into())
-                .title(title);
-            frame.render_widget(popup, popup_area);
+            self.render_popup_save(frame, rect);
         }
     }
 
-    fn render_segtype_raid(&mut self, frame: &mut Frame, rect: &Rect) {
+    fn render_popup_save(&mut self, frame: &mut Frame, rect: &Rect) {
+        let popup_area = Rect {
+            x: rect.width / 4,
+            y: rect.height / 3,
+            width: rect.width / 2,
+            height: rect.height / 2,
+        };
+        let title = format!("Create {}", self.lvname.value);
+        let s1 = Style::new().white().bold();
+        let lvtxt = Span::from(&self.lvname.value).style(s1);
+        let vgtxt = Span::from(&self.vg_name).style(s1);
+        let segtype = &self.lvsegtype_opts[self.lvsegtype_state.selected.unwrap()].to_string();
+
+        let mut lvm_extra_args = Vec::<lvm::LvmExtraArg>::new();
+        self.populate_extra_opts(segtype, &mut lvm_extra_args);
+        let mut extra_args_msg = String::new();
+        for arg in lvm_extra_args.iter() {
+            let msg = format!("{}={} ", arg.opt, arg.value);
+            extra_args_msg.push_str(&msg);
+        }
+
+        let mut line = Line::from(vec![
+            Span::from("You are about to create a new logical volumn '"),
+            lvtxt,
+            Span::from("' in volumn group '"),
+            vgtxt,
+            Span::from("'. Segtype '"),
+            Span::from(segtype),
+        ]);
+
+        if lvm_extra_args.len() > 0 {
+            line.push_span(Span::from("'. Extra args: "));
+            line.push_span(Span::from(extra_args_msg));
+            line.push_span(Span::from(""));
+        }
+
+        let popup = ConfPopup::new(Colors::new(&res::PALETTES[0]))
+            .content(line.into())
+            .title(title);
+        frame.render_widget(popup, popup_area);
+    }
+
+    //
+    // raid0, 5, 6
+    //  --stripes Number
+    //  --stripesize Size
+    //
+    fn render_segtype_raid0_5_6(&mut self, frame: &mut Frame, rect: &Rect) {
         let v_layout = &Layout::vertical([Length(1), Length(1)]);
 
         let [nr_str_area, str_size_area] = v_layout.areas(*rect);
@@ -813,7 +874,7 @@ impl<'a> LvNewView<'a> {
             .alignment(ratatui::layout::Alignment::Left)
             .style(Style::new().fg(self.colors.row_fg));
         let para_input = Paragraph::new(
-            self.raid_nrdevs
+            self.stripes
                 .value
                 .clone()
                 .fg(self.colors.selected_column_style_fg),
@@ -822,9 +883,9 @@ impl<'a> LvNewView<'a> {
         .style(self.style_input());
         frame.render_widget(para_label, label_area);
         frame.render_widget(para_input, input_area);
-        if self.focus == Focus::SegTypeRaidStripes {
+        if self.focus == Focus::SegTypeStripes {
             frame.set_cursor_position(Position::new(
-                input_area.x + (self.raid_nrdevs.pos as u16),
+                input_area.x + (self.stripes.pos as u16),
                 input_area.y,
             ));
         }
@@ -834,7 +895,7 @@ impl<'a> LvNewView<'a> {
             .alignment(ratatui::layout::Alignment::Left)
             .style(Style::new().fg(self.colors.row_fg));
         let para_input = Paragraph::new(
-            self.raid_ss
+            self.strips_size
                 .value
                 .clone()
                 .fg(self.colors.selected_column_style_fg),
@@ -843,31 +904,36 @@ impl<'a> LvNewView<'a> {
         .style(self.style_input());
         frame.render_widget(para_label, label_area);
         frame.render_widget(para_input, input_area);
-        if self.focus == Focus::SegTypeRaidSsize {
+        if self.focus == Focus::SegTypeSsize {
             frame.set_cursor_position(Position::new(
-                input_area.x + (self.raid_ss.pos as u16),
+                input_area.x + (self.strips_size.pos as u16),
                 input_area.y,
             ));
         }
     }
 
-    fn render_segtype_mirror(&mut self, frame: &mut Frame, rect: &Rect) {
-        let v_layout = &Layout::vertical([Length(1), Length(1)]);
+    // Raid10
+    // --mirrors
+    // --stripes Number
+    // --stripesize Size
+    //
+    fn render_segtype_raid10(&mut self, frame: &mut Frame, rect: &Rect) {
+        let v_layout = &Layout::vertical([Length(1), Length(1), Length(1)]);
 
-        let [nr_str_area, str_size_area] = v_layout.areas(*rect);
+        let [nr_str_area, str_size_area, nr_mirrors_area] = v_layout.areas(*rect);
 
         let h_layout = &Layout::horizontal([
-            Length(("stripe size:".len() + 1).try_into().unwrap()),
+            Length(("stripes/PVs:".len() + 1).try_into().unwrap()),
             Length(5),
         ])
         .horizontal_margin(1)
         .spacing(1);
         let [label_area, input_area] = h_layout.areas(nr_str_area);
-        let para_label = Paragraph::new("mirrors:")
+        let para_label = Paragraph::new("stripes/PVs:")
             .alignment(ratatui::layout::Alignment::Left)
             .style(Style::new().fg(self.colors.row_fg));
         let para_input = Paragraph::new(
-            self.mirror_nrdevs
+            self.stripes
                 .value
                 .clone()
                 .fg(self.colors.selected_column_style_fg),
@@ -876,9 +942,9 @@ impl<'a> LvNewView<'a> {
         .style(self.style_input());
         frame.render_widget(para_label, label_area);
         frame.render_widget(para_input, input_area);
-        if self.focus == Focus::SegTypeMirrorStripes {
+        if self.focus == Focus::SegTypeStripes {
             frame.set_cursor_position(Position::new(
-                input_area.x + (self.mirror_nrdevs.pos as u16),
+                input_area.x + (self.stripes.pos as u16),
                 input_area.y,
             ));
         }
@@ -888,7 +954,7 @@ impl<'a> LvNewView<'a> {
             .alignment(ratatui::layout::Alignment::Left)
             .style(Style::new().fg(self.colors.row_fg));
         let para_input = Paragraph::new(
-            self.mirror_ss
+            self.strips_size
                 .value
                 .clone()
                 .fg(self.colors.selected_column_style_fg),
@@ -897,9 +963,67 @@ impl<'a> LvNewView<'a> {
         .style(self.style_input());
         frame.render_widget(para_label, label_area);
         frame.render_widget(para_input, input_area);
-        if self.focus == Focus::SegTypeMirrorSsize {
+        if self.focus == Focus::SegTypeSsize {
             frame.set_cursor_position(Position::new(
-                input_area.x + (self.mirror_ss.pos as u16),
+                input_area.x + (self.strips_size.pos as u16),
+                input_area.y,
+            ));
+        }
+
+        let [label_area, input_area] = h_layout.areas(nr_mirrors_area);
+        let para_label = Paragraph::new("mirrors:")
+            .alignment(ratatui::layout::Alignment::Left)
+            .style(Style::new().fg(self.colors.row_fg));
+        let para_input = Paragraph::new(
+            self.mirrors
+                .value
+                .clone()
+                .fg(self.colors.selected_column_style_fg),
+        )
+        .alignment(ratatui::layout::Alignment::Left)
+        .style(self.style_input());
+        frame.render_widget(para_label, label_area);
+        frame.render_widget(para_input, input_area);
+        if self.focus == Focus::SegTypeMirrors {
+            frame.set_cursor_position(Position::new(
+                input_area.x + (self.mirrors.pos as u16),
+                input_area.y,
+            ));
+        }
+    }
+
+    //
+    // Mirrors --mirrors Number
+    //
+    fn render_segtype_mirror(&mut self, frame: &mut Frame, rect: &Rect) {
+        let v_layout = &Layout::vertical([Length(1)]);
+        let [nr_str_area] = v_layout.areas(*rect);
+        let h_layout = &Layout::horizontal([
+            Length(("mirrors:".len() + 1).try_into().unwrap()),
+            Length(5),
+        ])
+        .horizontal_margin(1)
+        .spacing(1);
+        let [label_area, input_area] = h_layout.areas(nr_str_area);
+
+        let para_label = Paragraph::new("mirrors:")
+            .alignment(ratatui::layout::Alignment::Left)
+            .style(Style::new().fg(self.colors.row_fg));
+        let para_input = Paragraph::new(
+            self.mirrors
+                .value
+                .clone()
+                .fg(self.colors.selected_column_style_fg),
+        )
+        .alignment(ratatui::layout::Alignment::Left)
+        .style(self.style_input());
+
+        frame.render_widget(para_label, label_area);
+        frame.render_widget(para_input, input_area);
+
+        if self.focus == Focus::SegTypeMirrors {
+            frame.set_cursor_position(Position::new(
+                input_area.x + (self.mirrors.pos as u16),
                 input_area.y,
             ));
         }
@@ -910,10 +1034,10 @@ impl<'a> LvNewView<'a> {
 
         match segtype {
             "linear" => rect.height = 0,
-            "striped" => self.render_segtype_raid(frame, rect),
-            "raid0" => self.render_segtype_raid(frame, rect),
-            "raid10" => self.render_segtype_raid(frame, rect),
-            "raid5" => self.render_segtype_raid(frame, rect),
+            "raid0" => self.render_segtype_raid0_5_6(frame, rect),
+            "raid10" => self.render_segtype_raid10(frame, rect),
+            "raid5" => self.render_segtype_raid0_5_6(frame, rect),
+            "raid6" => self.render_segtype_raid0_5_6(frame, rect),
             "raid1" => self.render_segtype_mirror(frame, rect),
             _ => rect.height = 0,
         }
