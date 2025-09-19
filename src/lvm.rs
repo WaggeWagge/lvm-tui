@@ -5,7 +5,7 @@ use std::{
 
 use crate::lvm::lvmbind::{
     _GError, BDLVMSEGdata, GError, bd_lvm_init, bd_lvm_lvcreate, bd_lvm_lvdata_free,
-    bd_lvm_lvs_tree, bd_lvm_pvdata_free, bd_lvm_pvs, bd_lvm_vgdata_free, bd_lvm_vginfo, bd_lvm_vgs,    
+    bd_lvm_lvs_tree, bd_lvm_pvdata_free, bd_lvm_pvs, bd_lvm_vgdata_free, bd_lvm_vginfo, bd_lvm_vgs,
 };
 
 mod lvmbind {
@@ -159,9 +159,9 @@ pub fn create_lv(
     size: u64,
     segtype: &String,
     pvl: &Vec<String>,
-    extra: &Vec<String>
+    extra: &Vec<LvmExtraArg>,
 ) -> Result<String, &'static str> {
-    
+   
     let vg_cstr = CString::new(vg.as_str()).expect("CString::new fault");
     let vg_cstr = vg_cstr.as_ptr();
 
@@ -169,25 +169,37 @@ pub fn create_lv(
     let lv_cstr = lv_cstr.as_ptr();
 
     let sg_cstr = CString::new(segtype.as_str()).expect("CString::new fault");
-    let sg_cstr = sg_cstr.as_ptr();        
+    let sg_cstr = sg_cstr.as_ptr();
 
-    let pv_list: *mut *const i8 = ptr::null_mut();
+    let mut in_pv_list: String = String::from("");
+    for pvdev in pvl.iter() {
+        todo!("pvdevlist cause segfault. *mut ");
+        in_pv_list.push_str(format!("{} ", &pvdev).as_str());
+    }
+    let in_pv_list: &str = in_pv_list.trim();
+   
+    let pvl_cstr: CString = CString::new(in_pv_list).expect("CString::new fault");
+    let pvl_tmp_ptr = pvl_cstr.into_raw();       
+    // TODO cant use CString for pv_list, cause segfault. 
+    let pv_list_ptr: *mut *const i8 = pvl_tmp_ptr.cast();
+    let pv_list_ptr: *mut *const i8 = ptr::null_mut();
 
-    unsafe {
+    let mut result: Result<String, &str> = Result::Ok(String::from("Created LV."));
+    unsafe {        
         let error: *mut _GError = ptr::null_mut();
-        let mut error = Box::new(error);
-        let error = &mut *error;
+        let mut error: Box<*mut _GError> = Box::new(error);
+        let error: &mut *mut _GError = &mut *error;
 
         if bd_lvm_lvcreate(
             vg_cstr,
             lv_cstr,
             size,
             sg_cstr,
-            pv_list,
+            pv_list_ptr,
             ptr::null_mut(),
             error,
         ) != 1
-        {
+        {            
             if !error.is_null() {
                 let ptr_gerror = *error;
                 let message = CStr::from_ptr((*ptr_gerror).message)
@@ -195,15 +207,18 @@ pub fn create_lv(
                     .clone()
                     .unwrap();
                 // free the error ptr
-                //g_error_free(*error);  // no, Box free when go out of scope.                            
-                return Err(message);
+                //g_error_free(*error);  // no, Box free when go out of scope.
+                result = Err(message);
             } else {
-                return Err("Failed to create LV. Error unknown...");
+                result = Err("Failed to create LV. Error unknown...");
             }
+         
+            // retake pointer to free memory
+            let _ = CString::from_raw(pvl_tmp_ptr);
         }
     };
 
-    Ok(String::from("Created LV."))
+    return result;
 }
 
 pub fn get_lvs() -> Vec<LvmLvData> {
