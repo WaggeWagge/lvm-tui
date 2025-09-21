@@ -527,7 +527,7 @@ fn fetch_data(vgs: &mut Vec<VgTableData>) {
         for lv_name in lvs_in_vg {
             // Go though existing rows, if find space i.e. "", update row,
             // if no empty lv_names remaining, add new row.
-            if !rows.last().unwrap().lv_name.eq("") {
+            if rows.last().is_none() || !rows.last().unwrap().lv_name.eq("") {
                 // Add new
                 let row: VgTableData = VgTableData {
                     vg_name: vg_name.clone(),

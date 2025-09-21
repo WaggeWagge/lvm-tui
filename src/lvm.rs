@@ -1,9 +1,11 @@
 use std::{
-    error::Error, ffi::{CStr, CString}, io::Stdout, ptr
+    ffi::{CStr, CString},
+    ptr,
 };
 
 use crate::lvm::lvmbind::{
-    BDLVMSEGdata, GError, _GError, bd_lvm_init, bd_lvm_lvcreate, bd_lvm_lvdata_free, bd_lvm_lvs_tree, bd_lvm_pvdata_free, bd_lvm_pvs, bd_lvm_vgdata_free, bd_lvm_vginfo, bd_lvm_vgs, GDBusError
+    _GError, BDLVMSEGdata, GError, bd_lvm_init, bd_lvm_lvcreate, bd_lvm_lvdata_free,
+    bd_lvm_lvs_tree,
 };
 
 mod lvmbind {
@@ -16,6 +18,10 @@ mod lvmbind {
     #![allow(dead_code)]
     include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 }
+
+const VGDISPLAY_BIN: &str = "/usr/sbin/vgs";
+const PVS_BIN: &str = "/usr/sbin/pvs";
+const LVS_BIN: &str = "/usr/sbin/lvs";
 
 pub struct LvmExtraArg {
     pub opt: String,
@@ -36,6 +42,8 @@ pub struct LvmLvData {
     pub segtype: String,
     pub uuid: String,
     pub lv_segs: Vec<LvmlvSegData>,
+    pub stripes: u16,
+    pub data_stripes: u16,
 }
 
 #[derive(Clone)]
@@ -51,8 +59,8 @@ pub struct LvmVgData {
     pub free: u64, // bytes
     pub size: u64, // bytes
     pub pv_count: u64,
-    attr: String,
-    uuid: String,
+    pub attr: String,
+    pub uuid: String,
 }
 
 pub fn init() -> bool {
@@ -65,23 +73,30 @@ pub fn init() -> bool {
     }
 }
 
-pub fn get_vg_info(vg_name: &String) -> LvmVgData {
-    use std::process::Command;
+fn run_cmd(cmd: &str, args: &[&str]) -> Result<std::process::Output, std::io::Error> {
+    let mut command: std::process::Command = std::process::Command::new(cmd);
+    command.args(args).output()
+}
 
-    let mut vgdisplay = Command::new("/usr/sbin/vgs");    
-    let result= vgdisplay.args([
-            vg_name,            
-            "--headings", "none",
-            "--separator", ",",
-            "--reportformat", "basic",
-            "-a", "--units", "B",
-            "-o", "vg_name,vg_size,vg_free,pv_count,vg_attr,vg_uuid",
-        ])
-        .output();               
-   
-    match result {
-        Ok(o) => {                     
-            let s: std::borrow::Cow<'_, str> = String::from_utf8_lossy(&o.stdout);                  
+pub fn get_vg_info(vg_name: &String) -> LvmVgData {
+    let args: [&str; 12] = [
+        vg_name,
+        "--headings",
+        "none",
+        "--separator",
+        ",",
+        "--reportformat",
+        "basic",
+        "-a",
+        "--units",
+        "B",
+        "-o",
+        "vg_name,vg_size,vg_free,pv_count,vg_attr,vg_uuid",
+    ];
+
+    match run_cmd(VGDISPLAY_BIN, &args) {
+        Ok(o) => {
+            let s: std::borrow::Cow<'_, str> = String::from_utf8_lossy(&o.stdout);
             match parse_vgdo(&s) {
                 Ok(s) => s,
                 Err(e) => panic!("{e}"),
@@ -95,8 +110,7 @@ pub fn get_vg_info(vg_name: &String) -> LvmVgData {
 // VG,VSize,VFree,#PV,Attr,VG UUID
 // vgssd_virt,120028397568B,54530146304B,1,wz--n-,ZFcFCx-fW2F-sWq6-PVy1-8PN2-2CVt-epVMVt
 //
-fn parse_vgdo(s: &std::borrow::Cow<'_, str>) -> Result<LvmVgData,  &'static str > {
-    
+fn parse_vgdo(s: &std::borrow::Cow<'_, str>) -> Result<LvmVgData, &'static str> {
     let err = "failed to parse/split vgdisplay output";
 
     if s.len() < 1 {
@@ -109,83 +123,264 @@ fn parse_vgdo(s: &std::borrow::Cow<'_, str>) -> Result<LvmVgData,  &'static str 
 
     let lvmvgdata: LvmVgData = LvmVgData {
         name: v.get(0).ok_or(err)?.trim().to_string(),
-        size: parse_ds(v.get(1).ok_or(err)?.trim())?,      
-        free: parse_ds(v.get(2).ok_or(err)?.trim())?,        
-        pv_count: v.get(3).ok_or(err)?.trim().to_string().parse::<u64>().unwrap_or(0),
-        attr: v.get(4).ok_or(err)?.trim().to_string(),
-        uuid: v.get(5).ok_or(err)?.trim().to_string(),        
+        size: parseu64_ds(v.get(1).ok_or_else(||err)?.trim())?,
+        free: parseu64_ds(v.get(2).ok_or_else(||err)?.trim())?,
+        pv_count: v
+            .get(3)
+            .ok_or(err)?
+            .trim()
+            .to_string()
+            .parse::<u64>()
+            .unwrap_or(0),
+        attr: v.get(4).ok_or_else(||err)?.trim().to_string(),
+        uuid: v.get(5).ok_or_else(||err)?.trim().to_string(),
     };
 
     return Ok(lvmvgdata);
 }
 
-fn parse_ds(s: &str) -> Result<u64, &'static str> {
+fn parseu64_ds(s: &str) -> Result<u64, &'static str> {
     let num = &s[0..(s.len() - 1)]; //  drop last char, eg. '123321B'
     let num = num.to_string().parse::<u64>();
     match num {
         Ok(num) => Ok(num),
         Err(_) => Err("Failed to convert string to int"),
-    }   
+    }
 }
 
-pub fn get_vgs() -> Vec<String> {
-    let mut vg_list: Vec<String> = Vec::<String>::new();
+fn parseu16(s: &str) -> Result<u16, &'static str> {
+    let num = &s[0..(s.len())]; //  
+    let num = num.to_string().parse::<u16>();
+    match num {
+        Ok(num) => Ok(num),
+        Err(_) => Err("Failed to convert string to u16"),
+    }
+}
 
-    unsafe {
-        let error: *mut *mut GError = ptr::null_mut();
-        let mut lvm_vg_list = bd_lvm_vgs(error);
-
-        if lvm_vg_list.is_null() {
-            return vg_list;
-        }
-
-        while !(*lvm_vg_list).is_null() {
-            let lvm_vg_data = *lvm_vg_list;
-            vg_list.push(
-                CStr::from_ptr((*lvm_vg_data).name)
-                    .to_str()
-                    .unwrap()
-                    .to_string(),
-            );
-            bd_lvm_vgdata_free(lvm_vg_data);
-            lvm_vg_list = lvm_vg_list.add(1);
-        }
+//
+// VG
+// vgssd_virt
+// vg2
+//
+fn parse_vgso(s: &std::borrow::Cow<'_, str>) -> Result<Vec<String>, &'static str> {
+    if s.len() < 1 {
+        return Ok(Vec::<String>::new());
     }
 
-    return vg_list;
+    let v_vgs = s.lines().map(|line| line.trim().to_string()).collect();
+
+    return Ok(v_vgs);
+}
+
+//
+// Return all volumne groups found.
+//
+pub fn get_vgs() -> Vec<String> {
+    let args: [&str; 11] = [
+        "--headings",
+        "none",
+        "--separator",
+        ",",
+        "--reportformat",
+        "basic",
+        "-a",
+        "--units",
+        "B",
+        "-o",
+        "vg_name",
+    ];
+
+    match run_cmd(VGDISPLAY_BIN, &args) {
+        Ok(o) => {
+            let s: std::borrow::Cow<'_, str> = String::from_utf8_lossy(&o.stdout);
+            match parse_vgso(&s) {
+                Ok(s) => s,
+                Err(e) => panic!("{e}"),
+            }
+        }
+        Err(e) => panic!("{e}"),
+    }
+}
+
+//
+// PV, VG
+// /dev/sda1,vg01
+// /dev/sdx,
+// /dev/sd1
+//
+fn parse_pvso(s: &std::borrow::Cow<'_, str>) -> Result<Vec<LvmPVData>, &'static str> {
+    if s.len() < 1 {
+        return Ok(Vec::<LvmPVData>::new());
+    }
+
+    let res: Result<Vec<LvmPVData>, &'static str> = s
+        .lines()
+        .filter(|&line| !line.trim().is_empty())
+        .map(|line| {
+            let data: Vec<&str> = line.trim().split(",").collect();
+            let err = "Could not parse 'pv_name' from lines, unexpected";
+            let pv_name = data.get(0).ok_or(err)?.to_string();
+            let vg_name = data.get(1).unwrap_or(&"").to_string(); // ok, pv may not have vg
+            let lvm_pv_data: LvmPVData = {
+                LvmPVData {
+                    pv_name: pv_name,
+                    vg_name: vg_name,
+                }
+            };
+            Ok::<LvmPVData, &'static str>(lvm_pv_data)
+        })
+        .collect();
+
+    return res;
+}
+
+pub fn get_lvs_segs(lv_name: &String) -> Result<Vec<LvmlvSegData>, &'static str> {
+    let lv_name_arg = format!{"lvname={}", lv_name};
+     let args: [&str; 13] = [
+        "--headings",
+        "none",
+        "--separator",
+        ",",
+        "--reportformat",
+        "basic",
+        "-a",
+        "--units",
+        "B",
+        "-o",
+        "lv_name,vg_name,seg_size,seg_le_ranges,devices", 
+        "-S",
+        lv_name_arg.as_str(),
+    ];
+    
+    Ok(Vec::<LvmlvSegData>::new())
 }
 
 pub fn get_pvs() -> Vec<LvmPVData> {
-    let mut pv_list: Vec<LvmPVData> = Vec::<LvmPVData>::new();
+    let args: [&str; 11] = [
+        "--headings",
+        "none",
+        "--separator",
+        ",",
+        "--reportformat",
+        "basic",
+        "-a",
+        "--units",
+        "B",
+        "-o",
+        "pv_name",
+    ];
 
-    unsafe {
-        let error: *mut *mut GError = ptr::null_mut();
-        let mut lvm_pv_arr = bd_lvm_pvs(error);
-
-        if lvm_pv_arr.is_null() {
-            return pv_list;
+    match run_cmd(PVS_BIN, &args) {
+        Ok(o) => {
+            let s: std::borrow::Cow<'_, str> = String::from_utf8_lossy(&o.stdout);
+            let result: Result<Vec<LvmPVData>, &'static str> = parse_pvso(&s);
+            match result {
+                Ok(pvs) => {
+                    return pvs;
+                }
+                Err(e) => panic!("{e}"),
+            }
         }
+        Err(e) => panic!("{e}"),
+    }
+}
 
-        while !(*lvm_pv_arr).is_null() {
-            let lvm_pv_data = *lvm_pv_arr;
-            let pv_item: LvmPVData = LvmPVData {
-                pv_name: CStr::from_ptr((*lvm_pv_data).pv_name)
-                    .to_str()
-                    .unwrap()
-                    .to_string(),
-                vg_name: CStr::from_ptr((*lvm_pv_data).vg_name)
-                    .to_str()
-                    .unwrap()
-                    .to_string(),
-            };
-
-            pv_list.push(pv_item);
-            bd_lvm_pvdata_free(lvm_pv_data);
-            lvm_pv_arr = lvm_pv_arr.add(1);
-        }
+// output ex:
+// LV,VG,LSize,Attr,Type,LV UUID,#Str,#DStr
+// [lvpub_rmeta_3],vg04_1tbdisks,4194304B,ewi-aor---,linear,qhuhv2-Kdro-dySw-L8d4-uSLJ-8ReD-rgYbD9,1,1
+// lvpub,vg04_1tbdisks,536875106304B,rwi-aor---,raid5,0iPPdB-17pl-7SKc-3rwU-EiBd-10fZ-WheGSZ,4,3
+// [lvpub_rimage_0],vg04_1tbdisks,178958368768B,iwi-aor---,linear,pIfgYg-TSAx-zinr-EyUh-AO8D-VezQ-FUDRGR,1,1
+// [lvpub_rimage_1],vg04_1tbdisks,178958368768B,iwi-aor---,linear,CfoQsY-v1Py-SaN4-KoGF-JmDk-1aNe-Q82Np9,1,1
+// [lvpub_rimage_2],vg04_1tbdisks,178958368768B,iwi-aor---,linear,Z4fbfS-DEJy-SBaU-qo89-XIH0-oRFW-kpOgBj,1,1
+// [lvpub_rimage_3],vg04_1tbdisks,178958368768B,iwi-aor---,linear,XFDDI5-0pL2-SO6Y-NS8P-TJJv-jSGk-KRv1gz,1,1
+// [lvpub_rmeta_0],vg04_1tbdisks,4194304B,ewi-aor---,linear,Rv8iwp-YEGJ-b9V4-ekfe-blD0-5FdB-7pIrhZ,1,1
+// [lvpub_rmeta_1],vg04_1tbdisks,4194304B,ewi-aor---,linear,wgwTeO-cW8E-xHuL-Zt0j-xwAa-F5tj-WnJqm9,1,1
+// [lvpub_rmeta_2],vg04_1tbdisks,4194304B,ewi-aor---,linear,WGltv5-UiaK-n0IT-tLeO-HDyj-jZnx-w0TIrM,1,1
+// [lvpub_rmeta_3],vg04_1tbdisks,4194304B,ewi-aor---,linear,qhuhv2-Kdro-dySw-L8d4-uSLJ-8ReD-rgYbD9,1,1
+//
+fn parse_lvso(s: &std::borrow::Cow<'_, str>) -> Result<Vec<LvmLvData>, &'static str> {
+    if s.len() < 1 {
+        return Ok(Vec::<LvmLvData>::new());
     }
 
-    return pv_list;
+    let res: Result<Vec<LvmLvData>, &'static str> = s
+        .lines()
+        .filter(|&line| !line.trim().is_empty())
+        .map(|line| {
+            let data: Vec<&str> = line.trim().split(",").collect();
+            let err = "Could not parse LvmLvData";
+            let lvm_lv_data: LvmLvData = {
+                let lv_name = data.get(0).ok_or_else(|| err)?.to_string();
+                LvmLvData {
+                    lv_name: lv_name.clone(),
+                    vg_name: data.get(1).ok_or_else(|| err)?.to_string(),
+                    size: parseu64_ds(data.get(2).ok_or_else(|| "failed to parse 'size'")?.trim())?,
+                    attr: data.get(3).ok_or_else(|| err)?.to_string(),
+                    segtype: data.get(4).ok_or_else(|| err)?.to_string(),
+                    uuid: data.get(5).ok_or_else(|| err)?.to_string(),
+                    stripes: parseu16(
+                        data.get(6)
+                            .ok_or_else(|| "failed to parse 'stripes'")?
+                            .trim(),
+                    )?,
+                    data_stripes: parseu16(
+                        data.get(7)
+                            .ok_or_else(|| "failed to parse 'data_stripes")?
+                            .trim(),
+                    )?,
+                    lv_segs: get_lvs_segs(&lv_name)?,
+                }
+            };
+            Ok::<LvmLvData, &'static str>(lvm_lv_data)
+        })
+        .collect();
+
+    return res;
+}
+
+//
+// lvs --headings none --separator ',' -a --units B -o lv_name,vg_name,size,attr,segtype,uuid,stripes,data_stripes
+//
+// ex:
+// [lvpub_rmeta_3],vg04_1tbdisks,4194304B,ewi-aor---,linear,qhuhv2-Kdro-dySw-L8d4-uSLJ-8ReD-rgYbD9,1,1
+// lvpub,vg04_1tbdisks,536875106304B,rwi-aor---,raid5,0iPPdB-17pl-7SKc-3rwU-EiBd-10fZ-WheGSZ,4,3
+// [lvpub_rimage_0],vg04_1tbdisks,178958368768B,iwi-aor---,linear,pIfgYg-TSAx-zinr-EyUh-AO8D-VezQ-FUDRGR,1,1
+// [lvpub_rimage_1],vg04_1tbdisks,178958368768B,iwi-aor---,linear,CfoQsY-v1Py-SaN4-KoGF-JmDk-1aNe-Q82Np9,1,1
+// [lvpub_rimage_2],vg04_1tbdisks,178958368768B,iwi-aor---,linear,Z4fbfS-DEJy-SBaU-qo89-XIH0-oRFW-kpOgBj,1,1
+// [lvpub_rimage_3],vg04_1tbdisks,178958368768B,iwi-aor---,linear,XFDDI5-0pL2-SO6Y-NS8P-TJJv-jSGk-KRv1gz,1,1
+// [lvpub_rmeta_0],vg04_1tbdisks,4194304B,ewi-aor---,linear,Rv8iwp-YEGJ-b9V4-ekfe-blD0-5FdB-7pIrhZ,1,1
+// [lvpub_rmeta_1],vg04_1tbdisks,4194304B,ewi-aor---,linear,wgwTeO-cW8E-xHuL-Zt0j-xwAa-F5tj-WnJqm9,1,1
+// [lvpub_rmeta_2],vg04_1tbdisks,4194304B,ewi-aor---,linear,WGltv5-UiaK-n0IT-tLeO-HDyj-jZnx-w0TIrM,1,1
+// [lvpub_rmeta_3],vg04_1tbdisks,4194304B,ewi-aor---,linear,qhuhv2-Kdro-dySw-L8d4-uSLJ-8ReD-rgYbD9,1,1
+//
+pub fn get_lvs() -> Vec<LvmLvData> {
+    let args: [&str; 11] = [
+        "--headings",
+        "none",
+        "--separator",
+        ",",
+        "--reportformat",
+        "basic",
+        "-a",
+        "--units",
+        "B",
+        "-o",
+        "lv_name,vg_name,size,attr,segtype,uuid,stripes,data_stripes",
+    ];
+
+    match run_cmd(LVS_BIN, &args) {
+        Ok(o) => {
+            let s: std::borrow::Cow<'_, str> = String::from_utf8_lossy(&o.stdout);
+            let result: Result<Vec<LvmLvData>, &'static str> = parse_lvso(&s);
+            match result {
+                Ok(pvs) => {
+                    return pvs;
+                }
+                Err(e) => panic!("{e}"),
+            }
+        }
+        Err(e) => panic!("{e}"),
+    }
 }
 
 //
@@ -197,113 +392,10 @@ pub fn create_lv(
     size: u64,
     segtype: &String,
     pvl: &Vec<String>,
-    extra: &Vec<LvmExtraArg>,
+    _extra: &Vec<LvmExtraArg>,
 ) -> Result<String, &'static str> {
-    let vg_cstr = CString::new(vg.as_str()).expect("CString::new fault");
-    let vg_cstr = vg_cstr.as_ptr();
-
-    let lv_cstr = CString::new(lv.as_str()).expect("CString::new fault");
-    let lv_cstr = lv_cstr.as_ptr();
-
-    let sg_cstr = CString::new(segtype.as_str()).expect("CString::new fault");
-    let sg_cstr = sg_cstr.as_ptr();
-
-    let mut in_pv_list: String = String::from("");
-    for pvdev in pvl.iter() {
-        todo!("pvdevlist cause segfault. *mut ");
-        in_pv_list.push_str(format!("{} ", &pvdev).as_str());
-    }
-    let in_pv_list: &str = in_pv_list.trim();
-
-    let pvl_cstr: CString = CString::new(in_pv_list).expect("CString::new fault");
-    let pvl_tmp_ptr = pvl_cstr.into_raw();
-    // TODO cant use CString for pv_list, cause segfault.
-    let pv_list_ptr: *mut *const i8 = pvl_tmp_ptr.cast();
-    let pv_list_ptr: *mut *const i8 = ptr::null_mut();
-
-    let mut result: Result<String, &str> = Result::Ok(String::from("Created LV."));
-    unsafe {
-        let error: *mut _GError = ptr::null_mut();
-        let mut error: Box<*mut _GError> = Box::new(error);
-        let error: &mut *mut _GError = &mut *error;
-
-        if bd_lvm_lvcreate(
-            vg_cstr,
-            lv_cstr,
-            size,
-            sg_cstr,
-            pv_list_ptr,
-            ptr::null_mut(),
-            error,
-        ) != 1
-        {
-            if !error.is_null() {
-                let ptr_gerror = *error;
-                let message = CStr::from_ptr((*ptr_gerror).message)
-                    .to_str()
-                    .clone()
-                    .unwrap();
-                // free the error ptr
-                //g_error_free(*error);  // no, Box free when go out of scope.
-                result = Err(message);
-            } else {
-                result = Err("Failed to create LV. Error unknown...");
-            }
-
-            // retake pointer to free memory
-            let _ = CString::from_raw(pvl_tmp_ptr);
-        }
-    };
-
-    return result;
-}
-
-pub fn get_lvs() -> Vec<LvmLvData> {
-    let mut lv_list: Vec<LvmLvData> = Vec::<LvmLvData>::new();
-
-    unsafe {
-        let error: *mut *mut GError = ptr::null_mut();
-
-        let mut lvm_lv_arr = bd_lvm_lvs_tree(ptr::null_mut(), error);
-
-        if lvm_lv_arr.is_null() {
-            return lv_list;
-        }
-
-        while !(*lvm_lv_arr).is_null() {
-            let lvm_lv_data = *lvm_lv_arr;
-            let lv_item: LvmLvData = LvmLvData {
-                lv_name: CStr::from_ptr((*lvm_lv_data).lv_name)
-                    .to_str()
-                    .unwrap()
-                    .to_string(),
-                vg_name: CStr::from_ptr((*lvm_lv_data).vg_name)
-                    .to_str()
-                    .unwrap()
-                    .to_string(),
-                size: (*lvm_lv_data).size,
-                attr: CStr::from_ptr((*lvm_lv_data).attr)
-                    .to_str()
-                    .unwrap()
-                    .to_string(),
-                segtype: CStr::from_ptr((*lvm_lv_data).segtype)
-                    .to_str()
-                    .unwrap()
-                    .to_string(),
-                uuid: CStr::from_ptr((*lvm_lv_data).uuid)
-                    .to_str()
-                    .unwrap()
-                    .to_string(),
-                lv_segs: conv_lv_segs((*lvm_lv_data).segs),
-            };
-
-            lv_list.push(lv_item);
-            bd_lvm_lvdata_free(lvm_lv_data);
-            lvm_lv_arr = lvm_lv_arr.add(1);
-        }
-    }
-
-    return lv_list;
+   
+   todo!("create_lv");
 }
 
 pub fn conv_lv_segs(mut segs_arr: *mut *mut BDLVMSEGdata) -> Vec<LvmlvSegData> {
@@ -371,7 +463,7 @@ pub fn get_lvinfo_by_vg(vg_name: &String, lv_list: &Vec<LvmLvData>) -> Vec<LvmLv
 
 #[cfg(test)]
 mod tests {
-    use crate::lvm::{LvmVgData, parse_vgdo};
+    use crate::lvm::{LvmVgData, parse_lvso, parse_pvso, parse_vgdo, parse_vgso};
 
     #[test]
     fn test_parse_vgdo() {
@@ -398,10 +490,112 @@ mod tests {
 
         // bad data in size
         // VG,VSize,VFree,#PV,Attr,VG UUID
-        let s =
-            "vgssd_virt,120028a397568B,54530146304B,1,wz--n-,ZFcFCx-fW2F-sWq6-PVy1-8PN2-2CVt-epVMVt";
+        let s = "vgssd_virt,120028a397568B,54530146304B,1,wz--n-,ZFcFCx-fW2F-sWq6-PVy1-8PN2-2CVt-epVMVt";
         let s: std::borrow::Cow<'_, str> = std::borrow::Cow::Borrowed(s);
         let result = parse_vgdo(&s);
-        assert!(result.is_err());       
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_vgso() {
+        let s = "  vg03_backups\n  vg04_1tbdisks\n  vgdata01\n  vgroot";
+        let s: std::borrow::Cow<'_, str> = std::borrow::Cow::Borrowed(s);
+
+        let lvm_vgs = parse_vgso(&s).expect("error");
+        assert_eq!(lvm_vgs.get(0).unwrap(), "vg03_backups");
+        assert_eq!(lvm_vgs.get(1).unwrap(), "vg04_1tbdisks");
+        assert_eq!(lvm_vgs.get(2).unwrap(), "vgdata01");
+        assert_eq!(lvm_vgs.get(3).unwrap(), "vgroot");
+        assert_eq!(lvm_vgs.len(), 4);
+
+        let s = "";
+        let s: std::borrow::Cow<'_, str> = std::borrow::Cow::Borrowed(s);
+        let lvm_vgs = parse_vgso(&s).expect("error");
+        assert_eq!(lvm_vgs.len(), 0);
+    }
+
+    #[test]
+    fn test_parse_pvso() {
+        ////
+        // PV, VG
+        // /dev/sda1,vg01
+        // /dev/sdx,
+        // /dev/sd1
+
+        let s = "  /dev/sda1,vg01\n  /dev/sdx,\n  /dev/sdb2";
+        let s: std::borrow::Cow<'_, str> = std::borrow::Cow::Borrowed(s);
+
+        let lvm_pvs = parse_pvso(&s).expect("error");
+        assert_eq!(lvm_pvs.get(0).unwrap().pv_name, "/dev/sda1");
+        assert_eq!(lvm_pvs.get(0).unwrap().vg_name, "vg01");
+        assert_eq!(lvm_pvs.get(1).unwrap().pv_name, "/dev/sdx");
+        assert_eq!(lvm_pvs.get(2).unwrap().pv_name, "/dev/sdb2");
+        assert_eq!(lvm_pvs.len(), 3);
+
+        // Ngegative test
+        let s = "  /dev/sda1,vg01\n  \n  /dev/sdb2";
+        let s: std::borrow::Cow<'_, str> = std::borrow::Cow::Borrowed(s);
+
+        let lvm_pvs = parse_pvso(&s).expect("error");
+        assert_eq!(lvm_pvs.len(), 2);
+    }
+
+    // ex:
+    // [lvpub_rmeta_3],vg04_1tbdisks,4194304B,ewi-aor---,linear,qhuhv2-Kdro-dySw-L8d4-uSLJ-8ReD-rgYbD9,1,1
+    // lvpub,vg04_1tbdisks,536875106304B,rwi-aor---,raid5,0iPPdB-17pl-7SKc-3rwU-EiBd-10fZ-WheGSZ,4,3
+    // [lvpub_rimage_0],vg04_1tbdisks,178958368768B,iwi-aor---,linear,pIfgYg-TSAx-zinr-EyUh-AO8D-VezQ-FUDRGR,1,1
+    // [lvpub_rimage_1],vg04_1tbdisks,178958368768B,iwi-aor---,linear,CfoQsY-v1Py-SaN4-KoGF-JmDk-1aNe-Q82Np9,1,1
+    // [lvpub_rimage_2],vg04_1tbdisks,178958368768B,iwi-aor---,linear,Z4fbfS-DEJy-SBaU-qo89-XIH0-oRFW-kpOgBj,1,1
+    // [lvpub_rimage_3],vg04_1tbdisks,178958368768B,iwi-aor---,linear,XFDDI5-0pL2-SO6Y-NS8P-TJJv-jSGk-KRv1gz,1,1
+    // [lvpub_rmeta_0],vg04_1tbdisks,4194304B,ewi-aor---,linear,Rv8iwp-YEGJ-b9V4-ekfe-blD0-5FdB-7pIrhZ,1,1
+    // [lvpub_rmeta_1],vg04_1tbdisks,4194304B,ewi-aor---,linear,wgwTeO-cW8E-xHuL-Zt0j-xwAa-F5tj-WnJqm9,1,1
+    // [lvpub_rmeta_2],vg04_1tbdisks,4194304B,ewi-aor---,linear,WGltv5-UiaK-n0IT-tLeO-HDyj-jZnx-w0TIrM,1,1
+    // [lvpub_rmeta_3],vg04_1tbdisks,4194304B,ewi-aor---,linear,qhuhv2-Kdro-dySw-L8d4-uSLJ-8ReD-rgYbD9,1,1
+    #[test]
+    fn test_parse_lvso() {
+        let s = "  [lvpub_rmeta_3],vg04_1tbdisks,4194304B,ewi-aor---,linear,qhuhv2-Kdro-dySw-L8d4-uSLJ-8ReD-rgYbD9,1,1
+            lvpub,vg04_1tbdisks,536875106304B,rwi-aor---,raid5,0iPPdB-17pl-7SKc-3rwU-EiBd-10fZ-WheGSZ,4,3
+            [lvpub_rimage_0],vg04_1tbdisks,178958368768B,iwi-aor---,linear,pIfgYg-TSAx-zinr-EyUh-AO8D-VezQ-FUDRGR,1,1
+            [lvpub_rimage_1],vg04_1tbdisks,178958368768B,iwi-aor---,linear,CfoQsY-v1Py-SaN4-KoGF-JmDk-1aNe-Q82Np9,1,1
+            [lvpub_rimage_2],vg04_1tbdisks,178958368768B,iwi-aor---,linear,Z4fbfS-DEJy-SBaU-qo89-XIH0-oRFW-kpOgBj,1,1
+            [lvpub_rimage_3],vg04_1tbdisks,178958368768B,iwi-aor---,linear,XFDDI5-0pL2-SO6Y-NS8P-TJJv-jSGk-KRv1gz,1,1
+            [lvpub_rmeta_0],vg04_1tbdisks,4194304B,ewi-aor---,linear,Rv8iwp-YEGJ-b9V4-ekfe-blD0-5FdB-7pIrhZ,1,1
+            [lvpub_rmeta_1],vg04_1tbdisks,4194304B,ewi-aor---,linear,wgwTeO-cW8E-xHuL-Zt0j-xwAa-F5tj-WnJqm9,1,1
+            [lvpub_rmeta_2],vg04_1tbdisks,4194304B,ewi-aor---,linear,WGltv5-UiaK-n0IT-tLeO-HDyj-jZnx-w0TIrM,1,1
+            [lvpub_rmeta_3],vg04_1tbdisks,4194304B,ewi-aor---,linear,qhuhv2-Kdro-dySw-L8d4-uSLJ-8ReD-rgYbD9,1,1";
+
+        let s: std::borrow::Cow<'_, str> = std::borrow::Cow::Borrowed(s);
+
+        let lvm_lvs = parse_lvso(&s).expect("error");
+        assert_eq!(lvm_lvs.get(0).unwrap().lv_name, "[lvpub_rmeta_3]");
+        assert_eq!(lvm_lvs.get(0).unwrap().size, 4194304);
+        assert_eq!(lvm_lvs.get(0).unwrap().attr, "ewi-aor---");
+        assert_eq!(lvm_lvs.get(0).unwrap().segtype, "linear");
+        assert_eq!(
+            lvm_lvs.get(0).unwrap().uuid,
+            "qhuhv2-Kdro-dySw-L8d4-uSLJ-8ReD-rgYbD9"
+        );
+        assert_eq!(lvm_lvs.get(0).unwrap().stripes, 1);
+        assert_eq!(lvm_lvs.get(0).unwrap().data_stripes, 1);
+
+        assert_eq!(lvm_lvs.len(), 10);
+
+        assert_eq!(lvm_lvs.get(1).unwrap().lv_name, "lvpub");
+        assert_eq!(lvm_lvs.get(1).unwrap().size, 536875106304);
+        assert_eq!(lvm_lvs.get(1).unwrap().attr, "rwi-aor---");
+        assert_eq!(lvm_lvs.get(1).unwrap().segtype, "raid5");
+        assert_eq!(
+            lvm_lvs.get(1).unwrap().uuid,
+            "0iPPdB-17pl-7SKc-3rwU-EiBd-10fZ-WheGSZ"
+        );
+        assert_eq!(lvm_lvs.get(1).unwrap().stripes, 4);
+        assert_eq!(lvm_lvs.get(1).unwrap().data_stripes, 3);
+        // ...
+        assert_eq!(lvm_lvs.get(9).unwrap().lv_name, "[lvpub_rmeta_3]");
+        assert_eq!(lvm_lvs.get(9).unwrap().data_stripes, 1);
+        assert_eq!(
+            lvm_lvs.get(9).unwrap().uuid,
+            "qhuhv2-Kdro-dySw-L8d4-uSLJ-8ReD-rgYbD9"
+        );
     }
 }
