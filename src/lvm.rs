@@ -1,11 +1,9 @@
 use std::{
-    ffi::{CStr, CString},
-    ptr,
+    error::Error, ffi::{CStr, CString}, io::Stdout, ptr
 };
 
 use crate::lvm::lvmbind::{
-    _GError, BDLVMSEGdata, GError, bd_lvm_init, bd_lvm_lvcreate, bd_lvm_lvdata_free,
-    bd_lvm_lvs_tree, bd_lvm_pvdata_free, bd_lvm_pvs, bd_lvm_vgdata_free, bd_lvm_vginfo, bd_lvm_vgs,
+    BDLVMSEGdata, GError, _GError, bd_lvm_init, bd_lvm_lvcreate, bd_lvm_lvdata_free, bd_lvm_lvs_tree, bd_lvm_pvdata_free, bd_lvm_pvs, bd_lvm_vgdata_free, bd_lvm_vginfo, bd_lvm_vgs, GDBusError
 };
 
 mod lvmbind {
@@ -29,7 +27,7 @@ pub struct LvmPVData {
     pub vg_name: String,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct LvmLvData {
     pub lv_name: String,
     pub vg_name: String,
@@ -47,11 +45,14 @@ pub struct LvmlvSegData {
     pub size_pe: u64,
 }
 
+#[derive(Clone, Default)]
 pub struct LvmVgData {
     pub name: String,
     pub free: u64, // bytes
     pub size: u64, // bytes
     pub pv_count: u64,
+    attr: String,
+    uuid: String,
 }
 
 pub fn init() -> bool {
@@ -65,29 +66,66 @@ pub fn init() -> bool {
 }
 
 pub fn get_vg_info(vg_name: &String) -> LvmVgData {
-    let error: *mut *mut GError = ptr::null_mut();
-    let vg_name_ptr = CString::new(vg_name.to_string())
-        .expect("failed to make CString")
-        .into_raw();
+    use std::process::Command;
 
-    unsafe {
-        let bd_lvm_vg_data = bd_lvm_vginfo(vg_name_ptr, error);
-        let lvm_vg_data: LvmVgData = {
-            LvmVgData {
-                name: CStr::from_ptr((*bd_lvm_vg_data).name)
-                    .to_str()
-                    .unwrap()
-                    .to_string(),
-                free: (*bd_lvm_vg_data).free,
-                size: (*bd_lvm_vg_data).size,
-                pv_count: (*bd_lvm_vg_data).pv_count,
+    let mut vgdisplay = Command::new("/usr/sbin/vgs");    
+    let result= vgdisplay.args([
+            vg_name,            
+            "--headings", "none",
+            "--separator", ",",
+            "--reportformat", "basic",
+            "-a", "--units", "B",
+            "-o", "vg_name,vg_size,vg_free,pv_count,vg_attr,vg_uuid",
+        ])
+        .output();               
+   
+    match result {
+        Ok(o) => {                     
+            let s: std::borrow::Cow<'_, str> = String::from_utf8_lossy(&o.stdout);                  
+            match parse_vgdo(&s) {
+                Ok(s) => s,
+                Err(e) => panic!("{e}"),
             }
-        };
-        let _ = CString::from_raw(vg_name_ptr); // free mem
-        bd_lvm_vgdata_free(bd_lvm_vg_data);
-
-        return lvm_vg_data;
+        }
+        Err(e) => panic!("{e}"),
     }
+}
+
+//
+// VG,VSize,VFree,#PV,Attr,VG UUID
+// vgssd_virt,120028397568B,54530146304B,1,wz--n-,ZFcFCx-fW2F-sWq6-PVy1-8PN2-2CVt-epVMVt
+//
+fn parse_vgdo(s: &std::borrow::Cow<'_, str>) -> Result<LvmVgData,  &'static str > {
+    
+    let err = "failed to parse/split vgdisplay output";
+
+    if s.len() < 1 {
+        return Err(err);
+    }
+    let v: Vec<&str> = s.split(",").collect();
+    if v.len() < 6 {
+        return Err(err);
+    }
+
+    let lvmvgdata: LvmVgData = LvmVgData {
+        name: v.get(0).ok_or(err)?.trim().to_string(),
+        size: parse_ds(v.get(1).ok_or(err)?.trim())?,      
+        free: parse_ds(v.get(2).ok_or(err)?.trim())?,        
+        pv_count: v.get(3).ok_or(err)?.trim().to_string().parse::<u64>().unwrap_or(0),
+        attr: v.get(4).ok_or(err)?.trim().to_string(),
+        uuid: v.get(5).ok_or(err)?.trim().to_string(),        
+    };
+
+    return Ok(lvmvgdata);
+}
+
+fn parse_ds(s: &str) -> Result<u64, &'static str> {
+    let num = &s[0..(s.len() - 1)]; //  drop last char, eg. '123321B'
+    let num = num.to_string().parse::<u64>();
+    match num {
+        Ok(num) => Ok(num),
+        Err(_) => Err("Failed to convert string to int"),
+    }   
 }
 
 pub fn get_vgs() -> Vec<String> {
@@ -161,7 +199,6 @@ pub fn create_lv(
     pvl: &Vec<String>,
     extra: &Vec<LvmExtraArg>,
 ) -> Result<String, &'static str> {
-   
     let vg_cstr = CString::new(vg.as_str()).expect("CString::new fault");
     let vg_cstr = vg_cstr.as_ptr();
 
@@ -177,15 +214,15 @@ pub fn create_lv(
         in_pv_list.push_str(format!("{} ", &pvdev).as_str());
     }
     let in_pv_list: &str = in_pv_list.trim();
-   
+
     let pvl_cstr: CString = CString::new(in_pv_list).expect("CString::new fault");
-    let pvl_tmp_ptr = pvl_cstr.into_raw();       
-    // TODO cant use CString for pv_list, cause segfault. 
+    let pvl_tmp_ptr = pvl_cstr.into_raw();
+    // TODO cant use CString for pv_list, cause segfault.
     let pv_list_ptr: *mut *const i8 = pvl_tmp_ptr.cast();
     let pv_list_ptr: *mut *const i8 = ptr::null_mut();
 
     let mut result: Result<String, &str> = Result::Ok(String::from("Created LV."));
-    unsafe {        
+    unsafe {
         let error: *mut _GError = ptr::null_mut();
         let mut error: Box<*mut _GError> = Box::new(error);
         let error: &mut *mut _GError = &mut *error;
@@ -199,7 +236,7 @@ pub fn create_lv(
             ptr::null_mut(),
             error,
         ) != 1
-        {            
+        {
             if !error.is_null() {
                 let ptr_gerror = *error;
                 let message = CStr::from_ptr((*ptr_gerror).message)
@@ -212,7 +249,7 @@ pub fn create_lv(
             } else {
                 result = Err("Failed to create LV. Error unknown...");
             }
-         
+
             // retake pointer to free memory
             let _ = CString::from_raw(pvl_tmp_ptr);
         }
@@ -330,4 +367,41 @@ pub fn get_lvinfo_by_vg(vg_name: &String, lv_list: &Vec<LvmLvData>) -> Vec<LvmLv
     }
 
     return lvs_in_vg_list;
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::lvm::{LvmVgData, parse_vgdo};
+
+    #[test]
+    fn test_parse_vgdo() {
+        // VG,VSize,VFree,#PV,Attr,VG UUID
+        let s =
+            "vgssd_virt,120028397568B,54530146304B,1,wz--n-,ZFcFCx-fW2F-sWq6-PVy1-8PN2-2CVt-epVMVt";
+        let s: std::borrow::Cow<'_, str> = std::borrow::Cow::Borrowed(s);
+
+        let lvm_vg_data: LvmVgData = parse_vgdo(&s).expect("error");
+        assert_eq!("vgssd_virt", lvm_vg_data.name);
+        assert_eq!(120028397568, lvm_vg_data.size);
+        assert_eq!(54530146304, lvm_vg_data.free);
+        assert_eq!(1, lvm_vg_data.pv_count);
+        assert_eq!("wz--n-", lvm_vg_data.attr);
+        assert_eq!("ZFcFCx-fW2F-sWq6-PVy1-8PN2-2CVt-epVMVt", lvm_vg_data.uuid);
+
+        // To few options in result
+        let s =
+            "vgssd_virt,120028397568B,54530146304B,wz--n-,ZFcFCx-fW2F-sWq6-PVy1-8PN2-2CVt-epVMVt";
+        let s: std::borrow::Cow<'_, str> = std::borrow::Cow::Borrowed(s);
+
+        let result = parse_vgdo(&s);
+        assert!(result.is_err());
+
+        // bad data in size
+        // VG,VSize,VFree,#PV,Attr,VG UUID
+        let s =
+            "vgssd_virt,120028a397568B,54530146304B,1,wz--n-,ZFcFCx-fW2F-sWq6-PVy1-8PN2-2CVt-epVMVt";
+        let s: std::borrow::Cow<'_, str> = std::borrow::Cow::Borrowed(s);
+        let result = parse_vgdo(&s);
+        assert!(result.is_err());       
+    }
 }
