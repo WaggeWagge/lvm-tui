@@ -4,8 +4,6 @@ pub mod res;
 pub mod statusbar;
 pub mod vgview;
 
-//use color_eyre::Result;
-//use color_eyre::eyre::Ok;
 use core::time;
 use crossterm::event::KeyEvent;
 use std::sync::Mutex;

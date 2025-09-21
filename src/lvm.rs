@@ -1,3 +1,14 @@
+//
+// Functions for talking with lvm and get info about logical volumns, PV etc.
+// Since lib (lvmapp.h) does not exist anymore, 
+// "difficult to maintain acc to main thread/mailinglist 2025",
+// remaining option seams to be either dbus or "good old" execv(lvs/lvcreate)
+// etc.
+//
+// Started with libblockdev (clib), but it turns out it  spawns lvm cmds anyway,
+// so opted to skip that and do 'Command' in rust dropping deps to clibs.
+//
+
 use std::{
     ffi::{CStr, CString},
     ptr,
