@@ -60,7 +60,7 @@ impl VgInfoView {
 
     pub fn fetch_data(&mut self) {
         self.vg_item = Some(lvm::get_vg_info(&self.vg_name));
-        self.lv_items = Some(lvm::get_lvinfo_by_vg(&self.vg_name, &lvm::get_lvs(true)));
+        self.lv_items = Some(lvm::get_lvinfo_by_vg(&self.vg_name, &lvm::get_lvs()));
         self.pvdev_list = Some(lvm::find_pvs_by_vg(&self.vg_name, &lvm::get_pvs()));
     }
 

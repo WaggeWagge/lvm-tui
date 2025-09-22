@@ -1,20 +1,16 @@
 //
 // Functions for talking with lvm and get info about logical volumns, PV etc.
-// Since lib (lvmapp.h) does not exist anymore,
-// "difficult to maintain acc to main thread/mailinglist 2025",
+// 
+// Since it seams lib (lvmapp.h ) does not exist anymore,
+// "difficult to maintain acc to thread/mailinglist 2025",
 // remaining option seams to be either dbus or "good old" execv(lvs/lvcreate)
 // etc.
 //
-// Started with libblockdev (clib), but it turns out it  spawns lvm cmds anyway,
-// so opted to skip that and do 'Command' in rust dropping deps to clibs.
+// Started with libblockdev (clib), but it turns out it spawns lvm cmds anyway.
+// Hence 'Command' in rust dropping deps to c-libs, bindgen. Commands used are lvs, pvs and vgs.
 //
 
-use std::{
-    collections::HashSet,
-    ffi::{CStr, CString},
-    ptr,
-};
-
+use std::collections::{HashMap, HashSet};
 
 const VGDISPLAY_BIN: &str = "/usr/sbin/vgs";
 const PVS_BIN: &str = "/usr/sbin/pvs";
@@ -59,10 +55,6 @@ pub struct LvmVgData {
     pub pv_count: u64,
     pub attr: String,
     pub uuid: String,
-}
-
-pub fn init() -> bool {
-   return true;
 }
 
 fn run_cmd(cmd: &str, args: &[&str]) -> Result<std::process::Output, std::io::Error> {
@@ -289,53 +281,114 @@ pub fn get_pvs() -> Vec<LvmPVData> {
 
 // output ex:
 // LV,VG,LSize,Attr,Type,LV UUID,#Str,#DStr
-// [lvpub_rmeta_3],vg04_1tbdisks,4194304B,ewi-aor---,linear,qhuhv2-Kdro-dySw-L8d4-uSLJ-8ReD-rgYbD9,1,1,parentlv,
-// lvpub,vg04_1tbdisks,536875106304B,rwi-aor---,raid5,0iPPdB-17pl-7SKc-3rwU-EiBd-10fZ-WheGSZ,4,3,,
+// [lvpub_rmeta_3],vg04_1tbdisks,4194304B,ewi-aor---,linear,qhuhv2-Kdro-dySw-L8d4-uSLJ-8ReD-rgYbD9,1,1,parentlv,/dev/sda1:7424-9983
+// lvpub,vg04_1tbdisks,536875106304B,rwi-aor---,raid5,0iPPdB-17pl-7SKc-3rwU-EiBd-10fZ-WheGSZ,4,3,,[lvpub_rimage_0]:0-42666,[lvpub_rimage_1]:0-42666,[lvpub_rimage_2]:0-42666,[lvpub_rimage_3]:0-42666
 //
-fn parse_lvso(s: &std::borrow::Cow<'_, str>, fs: bool) -> Result<Vec<LvmLvData>, &'static str> {
+fn parse_lvso(s: &std::borrow::Cow<'_, str>) -> Result<Vec<LvmLvData>, &'static str> {
     if s.len() < 1 {
         return Ok(Vec::<LvmLvData>::new());
     }
 
-    let res: Result<Vec<LvmLvData>, &'static str> = s
-        .lines()
-        .filter(|&line| !line.trim().is_empty())
-        .map(|line| {
-            let data: Vec<&str> = line.trim().split(",").collect();
-            let err = "Could not parse LvmLvData";
-            let lvm_lv_data: LvmLvData = {
-                let lv_name = data.get(0).ok_or_else(|| err)?.to_string();
-                LvmLvData {
-                    lv_name: lv_name.clone(),
-                    vg_name: data.get(1).ok_or_else(|| err)?.to_string(),
-                    size: parseu64_ds(data.get(2).ok_or_else(|| "failed to parse 'size'")?.trim())?,
-                    attr: data.get(3).ok_or_else(|| err)?.to_string(),
-                    segtype: data.get(4).ok_or_else(|| err)?.to_string(),
-                    uuid: data.get(5).ok_or_else(|| err)?.to_string(),
-                    stripes: parseu16(
-                        data.get(6)
-                            .ok_or_else(|| "failed to parse 'stripes'")?
-                            .trim(),
-                    )?,
-                    data_stripes: parseu16(
-                        data.get(7)
-                            .ok_or_else(|| "failed to parse 'data_stripes")?
-                            .trim(),
-                    )?,
-                    parent_lv: data.get(8).ok_or_else(|| err)?.to_string(),
-                    lv_segs: { if fs == true {
-                                get_lvs_segs(&lv_name)? 
-                            } else {
-                                Vec::<LvmlvSegData>::new()
-                            }
-                    },
-                }
-            };
-            Ok::<LvmLvData, &'static str>(lvm_lv_data)
-        })
-        .collect();
+    let mut lvdata_set = HashMap::<String, LvmLvData>::new();
 
-    return res;
+    for line in s.lines().filter(|&line| !line.trim().is_empty()) {
+        let err = "failed to parse Logical Volumne data";
+        let mut data: Vec<&str> = line.trim().split(",").collect();
+        let mut d_iter: std::slice::IterMut<'_, &str> = data.iter_mut();
+        let lv_name = d_iter.next().ok_or_else(|| err)?.to_string();
+        let vg_name = d_iter.next().ok_or_else(|| err)?.to_string();
+        let size = parseu64_ds(d_iter.next().ok_or_else(|| err)?)?;
+        let attr = d_iter.next().ok_or_else(|| err)?.to_string();
+        let segtype = d_iter.next().ok_or_else(|| err)?.to_string();
+        let uuid = d_iter.next().ok_or_else(|| err)?.to_string();
+        let stripes = parseu16(
+            d_iter
+                .next()
+                .ok_or_else(|| "failed to parse 'stripes'")?
+                .trim(),
+        )?;
+        let data_stripes = parseu16(
+            d_iter
+                .next()
+                .ok_or_else(|| "failed to parse 'data_stripes")?
+                .trim(),
+        )?;
+        let parent_lv = d_iter.next().ok_or_else(|| err)?.to_string();
+        let lv_data = LvmLvData {
+            lv_name: lv_name.clone(),
+            vg_name: vg_name,
+            size: size,
+            attr: attr,
+            segtype: segtype,
+            uuid: uuid,
+            lv_segs: Vec::<LvmlvSegData>::new(),
+            stripes: stripes,
+            data_stripes: data_stripes,
+            parent_lv: parent_lv,
+        };
+
+        // add lv to map if it does not exist before.
+        if !lvdata_set.contains_key(&lv_name) {
+            lvdata_set.insert(lv_name.clone(), lv_data);
+        }
+
+        // now remaining are devices
+        let v_lv_segs: Vec<LvmlvSegData> = parse_lvso_segs(d_iter)?;
+
+        // add segs to lvdata map.
+        let mut lv_data = lvdata_set.get(&lv_name).unwrap().clone(); // just unwrap here, unexpected to fail here.
+        for lv_segs in v_lv_segs {
+            lv_data.lv_segs.push(lv_segs);
+        }
+        lvdata_set.insert(lv_name.clone(), lv_data);
+    }
+
+    let res: Vec<LvmLvData> = lvdata_set.values().cloned().collect::<Vec<LvmLvData>>();
+
+    return Ok(res);
+}
+
+//
+// Get '/dev/sda1:7424-9983' part from
+// [lvpub_rmeta_3],vg04_1tbdisks,4194304B,ewi-aor---,linear,qhuhv2-Kdro-dySw-L8d4-uSLJ-8ReD-rgYbD9,1,1,parentlv,/dev/sda1:7424-9983
+// or [lvpub_rimage_0]:0-42666,[lvpub_rimage_1]:0-42666 ...
+//
+fn parse_lvso_segs(
+    d_iter: std::slice::IterMut<'_, &str>,
+) -> Result<Vec<LvmlvSegData>, &'static str> {
+    let mut v_lv_segs: Vec<LvmlvSegData> = Vec::<LvmlvSegData>::new();
+
+    for seg in d_iter {
+        let seg_data: Vec<&str> = seg.trim().split(",").collect();
+
+        for dev_data in seg_data {
+            let pos = dev_data
+                .find(":")
+                .ok_or_else(|| "failed to extents for pvdev")?;
+            let pvdev: &str = &dev_data[0..pos];
+            let remainder: &str = &dev_data[(pos + 1)..dev_data.len()];
+            let extent_pos = remainder.find("-");
+            let mut ext_start: u64 = 0;
+            let mut ext_end: u64 = 0;
+            match extent_pos {
+                Some(extent_pos) => {
+                    ext_start = remainder[0..(extent_pos)].parse::<u64>().unwrap_or(0);
+                    ext_end = remainder[(extent_pos + 1)..remainder.len()]
+                        .parse::<u64>()
+                        .unwrap_or(0);
+                }
+                None => (), // noop, init to 0 already
+            }
+
+            v_lv_segs.push(LvmlvSegData {
+                pvdev: pvdev.to_string(),
+                pv_start_pe: ext_start,
+                size_pe: ext_end,
+            });
+        }
+    }
+
+    Ok(v_lv_segs)
 }
 
 // Might be multiple lines per lvname.
@@ -366,7 +419,7 @@ fn parse_lvsegs(s: &std::borrow::Cow<'_, str>) -> Result<Vec<LvmlvSegData>, &'st
                 .to_string();
 
             // for now ignore extents
-            seg_le_devices.insert(dev);       
+            seg_le_devices.insert(dev);
         }
     }
 
@@ -394,7 +447,7 @@ fn parse_lvsegs(s: &std::borrow::Cow<'_, str>) -> Result<Vec<LvmlvSegData>, &'st
 // ex:
 // [lvdata_mpriv_rmeta_3],vgdata01,4194304B,ewi-aor---,linear,sDjQnR-1sCa-zHKG-mWQC-rO5C-pb7a-OrEjIE,1,1,lvdata_mpriv
 //
-pub fn get_lvs(fetch_segs: bool) -> Vec<LvmLvData> {
+pub fn get_lvs() -> Vec<LvmLvData> {
     let args: [&str; 11] = [
         "--headings",
         "none",
@@ -406,13 +459,13 @@ pub fn get_lvs(fetch_segs: bool) -> Vec<LvmLvData> {
         "--units",
         "B",
         "-o",
-        "lv_name,vg_name,size,attr,segtype,uuid,stripes,data_stripes,lv_parent",
+        "lv_name,vg_name,size,attr,segtype,uuid,stripes,data_stripes,lv_parent,seg_le_ranges",
     ];
 
     match run_cmd(LVS_BIN, &args) {
         Ok(o) => {
             let s: std::borrow::Cow<'_, str> = String::from_utf8_lossy(&o.stdout);
-            let result: Result<Vec<LvmLvData>, &'static str> = parse_lvso(&s, fetch_segs);
+            let result: Result<Vec<LvmLvData>, &'static str> = parse_lvso(&s);
             match result {
                 Ok(pvs) => {
                     return pvs;
@@ -428,11 +481,11 @@ pub fn get_lvs(fetch_segs: bool) -> Vec<LvmLvData> {
 // Create logical volumne
 //
 pub fn create_lv(
-    lv: &String,
-    vg: &String,
-    size: u64,
-    segtype: &String,
-    pvl: &Vec<String>,
+    _lv: &String,
+    _vg: &String,
+    _size: u64,
+    _segtype: &String,
+    _pvl: &Vec<String>,
     _extra: &Vec<LvmExtraArg>,
 ) -> Result<String, &'static str> {
     todo!("create_lv");
@@ -477,7 +530,7 @@ pub fn get_lvinfo_by_vg(vg_name: &String, lv_list: &Vec<LvmLvData>) -> Vec<LvmLv
 
 #[cfg(test)]
 mod tests {
-    
+
     use crate::lvm::{
         LvmVgData, LvmlvSegData, parse_lvsegs, parse_lvso, parse_pvso, parse_vgdo, parse_vgso,
     };
@@ -570,50 +623,22 @@ mod tests {
     // [lvpub_rmeta_3],vg04_1tbdisks,4194304B,ewi-aor---,linear,qhuhv2-Kdro-dySw-L8d4-uSLJ-8ReD-rgYbD9,1,1
     #[test]
     fn test_parse_lvso() {
-        let s = "  [lvpub_rmeta_3],vg04_1tbdisks,4194304B,ewi-aor---,linear,qhuhv2-Kdro-dySw-L8d4-uSLJ-8ReD-rgYbD9,1,1,lvpub,
-            lvpub,vg04_1tbdisks,536875106304B,rwi-aor---,raid5,0iPPdB-17pl-7SKc-3rwU-EiBd-10fZ-WheGSZ,4,3,,
-            [lvpub_rimage_0],vg04_1tbdisks,178958368768B,iwi-aor---,linear,pIfgYg-TSAx-zinr-EyUh-AO8D-VezQ-FUDRGR,1,1,lvpub,
-            [lvpub_rimage_1],vg04_1tbdisks,178958368768B,iwi-aor---,linear,CfoQsY-v1Py-SaN4-KoGF-JmDk-1aNe-Q82Np9,1,1,lvpub,
-            [lvpub_rimage_2],vg04_1tbdisks,178958368768B,iwi-aor---,linear,Z4fbfS-DEJy-SBaU-qo89-XIH0-oRFW-kpOgBj,1,1,lvpub,
-            [lvpub_rimage_3],vg04_1tbdisks,178958368768B,iwi-aor---,linear,XFDDI5-0pL2-SO6Y-NS8P-TJJv-jSGk-KRv1gz,1,1,lvpub,
-            [lvpub_rmeta_0],vg04_1tbdisks,4194304B,ewi-aor---,linear,Rv8iwp-YEGJ-b9V4-ekfe-blD0-5FdB-7pIrhZ,1,1,lvpub,
-            [lvpub_rmeta_1],vg04_1tbdisks,4194304B,ewi-aor---,linear,wgwTeO-cW8E-xHuL-Zt0j-xwAa-F5tj-WnJqm9,1,1,lvpub,
-            [lvpub_rmeta_2],vg04_1tbdisks,4194304B,ewi-aor---,linear,WGltv5-UiaK-n0IT-tLeO-HDyj-jZnx-w0TIrM,1,1,lvpub,
-            [lvpub_rmeta_3],vg04_1tbdisks,4194304B,ewi-aor---,linear,qhuhv2-Kdro-dySw-L8d4-uSLJ-8ReD-rgYbD9,1,1,lvpub,";
+        let s = "  lvbackup,vg03_backups,1073741824000B,-wi-ao----,linear,MlVT0F-L2mW-XCcY-UbJF-QUZJ-MzYe-cQYS9x,1,1,,/dev/sde2:0-255999
+  lvpub,vg04_1tbdisks,536875106304B,rwi-aor---,raid5,0iPPdB-17pl-7SKc-3rwU-EiBd-10fZ-WheGSZ,4,3,,[lvpub_rimage_0]:0-42666,[lvpub_rimage_1]:0-42666,[lvpub_rimage_2]:0-42666,[lvpub_rimage_3]:0-42666
+  [lvpub_rimage_0],vg04_1tbdisks,178958368768B,iwi-aor---,linear,pIfgYg-TSAx-zinr-EyUh-AO8D-VezQ-FUDRGR,1,1,lvpub,/dev/sdc1:2561-45227
+  [lvpub_rimage_1],vg04_1tbdisks,178958368768B,iwi-aor---,linear,CfoQsY-v1Py-SaN4-KoGF-JmDk-1aNe-Q82Np9,1,1,lvpub,/dev/sdd1:1-42667
+  [lvpub_rimage_2],vg04_1tbdisks,178958368768B,iwi-aor---,linear,Z4fbfS-DEJy-SBaU-qo89-XIH0-oRFW-kpOgBj,1,1,lvpub,/dev/sde1:1-42667
+  [lvpub_rimage_3],vg04_1tbdisks,178958368768B,iwi-aor---,linear,XFDDI5-0pL2-SO6Y-NS8P-TJJv-jSGk-KRv1gz,1,1,lvpub,/dev/sdb1:1-42667
+  [lvpub_rmeta_0],vg04_1tbdisks,4194304B,ewi-aor---,linear,Rv8iwp-YEGJ-b9V4-ekfe-blD0-5FdB-7pIrhZ,1,1,lvpub,/dev/sdc1:2560-2560
+  [lvpub_rmeta_1],vg04_1tbdisks,4194304B,ewi-aor---,linear,wgwTeO-cW8E-xHuL-Zt0j-xwAa-F5tj-WnJqm9,1,1,lvpub,/dev/sdd1:0-0
+  [lvpub_rmeta_2],vg04_1tbdisks,4194304B,ewi-aor---,linear,WGltv5-UiaK-n0IT-tLeO-HDyj-jZnx-w0TIrM,1,1,lvpub,/dev/sde1:0-0
+  [lvpub_rmeta_3],vg04_1tbdisks,4194304B,ewi-aor---,linear,qhuhv2-Kdro-dySw-L8d4-uSLJ-8ReD-rgYbD9,1,1,lvpub,/dev/sdb1:0-0";
 
         let s: std::borrow::Cow<'_, str> = std::borrow::Cow::Borrowed(s);
 
-        let lvm_lvs = parse_lvso(&s, false).expect("error");
-        assert_eq!(lvm_lvs.get(0).unwrap().lv_name, "[lvpub_rmeta_3]");
-        assert_eq!(lvm_lvs.get(0).unwrap().size, 4194304);
-        assert_eq!(lvm_lvs.get(0).unwrap().attr, "ewi-aor---");
-        assert_eq!(lvm_lvs.get(0).unwrap().segtype, "linear");
-        assert_eq!(
-            lvm_lvs.get(0).unwrap().uuid,
-            "qhuhv2-Kdro-dySw-L8d4-uSLJ-8ReD-rgYbD9"
-        );
-        assert_eq!(lvm_lvs.get(0).unwrap().stripes, 1);
-        assert_eq!(lvm_lvs.get(0).unwrap().data_stripes, 1);
+        let lvm_lvs = parse_lvso(&s).expect("error");
 
         assert_eq!(lvm_lvs.len(), 10);
-
-        assert_eq!(lvm_lvs.get(1).unwrap().lv_name, "lvpub");
-        assert_eq!(lvm_lvs.get(1).unwrap().size, 536875106304);
-        assert_eq!(lvm_lvs.get(1).unwrap().attr, "rwi-aor---");
-        assert_eq!(lvm_lvs.get(1).unwrap().segtype, "raid5");
-        assert_eq!(
-            lvm_lvs.get(1).unwrap().uuid,
-            "0iPPdB-17pl-7SKc-3rwU-EiBd-10fZ-WheGSZ"
-        );
-        assert_eq!(lvm_lvs.get(1).unwrap().stripes, 4);
-        assert_eq!(lvm_lvs.get(1).unwrap().data_stripes, 3);
-        // ...
-        assert_eq!(lvm_lvs.get(9).unwrap().lv_name, "[lvpub_rmeta_3]");
-        assert_eq!(lvm_lvs.get(9).unwrap().data_stripes, 1);
-        assert_eq!(
-            lvm_lvs.get(9).unwrap().uuid,
-            "qhuhv2-Kdro-dySw-L8d4-uSLJ-8ReD-rgYbD9"
-        );
     }
 
     // Might be multiple lines per lvname.

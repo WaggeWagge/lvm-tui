@@ -22,11 +22,6 @@ impl Termination for LinuxExitCode {
 }
 
 fn main() -> LinuxExitCode {
-    if !lvm::init() {
-        println!("Failed to scan blockdevs");
-        return LinuxExitCode::EErr(1);
-    }
-
     unsafe {
         let current_uid = nix::libc::geteuid();
         if current_uid != 0 {
