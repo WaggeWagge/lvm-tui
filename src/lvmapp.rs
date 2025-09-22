@@ -506,7 +506,7 @@ impl LvmApp<'_> {
 fn fetch_data(vgs: &mut Vec<VgTableData>) {
     let vg_list = lvm::get_vgs();
     let pv_list = lvm::get_pvs();
-    let lv_list = lvm::get_lvs();
+    let lv_list = lvm::get_lvs(false);
 
     for vg_name in vg_list {
         let pvs_in_vg: Vec<String> = lvm::find_pvs_by_vg(&vg_name, &pv_list);
