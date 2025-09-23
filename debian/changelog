@@ -1,6 +1,8 @@
 lvm-tui (0.1.1) stable; urgency=low
 
   * Initial release.
-  * release 3.
+  * release 4.
+  * Removed dep to libblockdev.
+  * View for creating Logical Volumns.
 
- -- chris <christian.t.holm@telia.com>  Fri, 31 Aug 2025 10:41:00 +0200
+ -- chris <kluxklux29@gmail.com >  Tue, 23 Sep 2025 11:46:00 +0200

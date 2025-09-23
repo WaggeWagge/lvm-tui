@@ -16,14 +16,11 @@ nix = "0.30.1"
 tui-widget-list = "0.13.2"
 derive_setters = "0.1.8"
 
-[build-dependencies]
-bindgen = "0.71.0"
-
 [package.metadata.deb]
 section = "unknown"
 revision = "4"
 changelog = "debian/changelog"
-depends = "libblockdev-lvm3, libblockdev3"
+depends = "lvm2"
 
 [package.metadata.rpm]
 package = "lvm-tui"
