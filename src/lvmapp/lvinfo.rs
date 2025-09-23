@@ -141,7 +141,7 @@ impl LvInfoView {
             .add_modifier(Modifier::REVERSED)
             .fg(self.colors.selected_row_style_fg);
 
-        let header = ["LV", "size(g)", "attr", "segtype", "uuid"]
+        let header = ["LV", "VG", "size(g)", "attr", "segtype"]
             .into_iter()
             .map(Cell::from)
             .collect::<Row>()
@@ -163,10 +163,10 @@ impl LvInfoView {
                 let size_gb = format!("{:.2}", size_gb);
                 let item: [&str; 5] = [
                     &data.lv_name,
+                    &data.vg_name,
                     &size_gb,
                     &data.attr,
-                    &data.segtype,
-                    &data.uuid,
+                    &data.segtype,                    
                 ];
                 item.into_iter()
                     .map(|content| Cell::from(Text::from(format!("{content}"))))
@@ -181,10 +181,10 @@ impl LvInfoView {
             [
                 // + 1 is for padding.
                 Constraint::Min(20),
-                Constraint::Length(8),
+                Constraint::Length(15),
                 Constraint::Length(8),
                 Constraint::Length(11),
-                Constraint::Min(40),
+                Constraint::Min(11),
             ],
         )
         .header(header)
