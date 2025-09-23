@@ -100,7 +100,7 @@ impl View for LvNewView<'_> {
                                     return Ok(true); // Done here
                                 }
                                 Err(e) => {
-                                    STATUS.lock().unwrap().set_status(e);
+                                    STATUS.lock().unwrap().set_status(&e);
                                     // Nothing to do but indicate error and press on...
                                 }
                             }
@@ -517,17 +517,9 @@ impl<'a> LvNewView<'a> {
         }
     }
 
-    fn handle_create_lv(&mut self) -> Result<String, &'static str> {
+    fn handle_create_lv(&mut self) -> Result<String, String> {
         let size = self.lvsize.value.parse::<u64>().unwrap();
         let size_opt = self.lvsize_opts[self.lvsize_opt_state.selected.unwrap()];
-        match size_opt {
-            "%FREE" => todo!("%FREE"),
-            "%VG" => todo!("%VG"),
-            _ => (),
-        }
-        let calc_size_multi = calc_size_multi(&size_opt.to_string());
-        let size = size * calc_size_multi;
-
         let segtype = &self.lvsegtype_opts[self.lvsegtype_state.selected.unwrap()].to_string();
         let lv_name = &self.lvname.value;
         let vg_name = &self.vg_name;
@@ -538,6 +530,7 @@ impl<'a> LvNewView<'a> {
             lv_name,
             vg_name,
             size,
+            &size_opt.to_string(),
             segtype,
             &self.pv_devs_selected,
             &lvm_extra_args,
@@ -551,14 +544,14 @@ impl<'a> LvNewView<'a> {
                 // --stripes,  --stripesize
                 if self.stripes.value.len() > 0 {
                     let stripes = LvmExtraArg {
-                        opt: "stripes".to_string(),
+                        opt: "--stripes".to_string(),
                         value: self.stripes.value.clone(),
                     };
                     extra_opts.push(stripes);
                 }
                 if self.strips_size.value.len() > 0 {
                     let ss = LvmExtraArg {
-                        opt: "stripesize".to_string(),
+                        opt: "--stripesize".to_string(),
                         value: self.strips_size.value.clone(),
                     };
                     extra_opts.push(ss);
@@ -568,21 +561,21 @@ impl<'a> LvNewView<'a> {
                 // --stripes,  --stripesize , --mirrors
                 if self.mirrors.value.len() > 0 {
                     let mirrors = LvmExtraArg {
-                        opt: "mirrors".to_string(),
+                        opt: "--mirrors".to_string(),
                         value: self.mirrors.value.clone(),
                     };
                     extra_opts.push(mirrors);
                 }
                 if self.strips_size.value.len() > 0 {
                     let ss = LvmExtraArg {
-                        opt: "stripesize".to_string(),
+                        opt: "--stripesize".to_string(),
                         value: self.strips_size.value.clone(),
                     };
                     extra_opts.push(ss);
                 }
                 if self.stripes.value.len() > 0 {
                     let stripes = LvmExtraArg {
-                        opt: "stripes".to_string(),
+                        opt: "--stripes".to_string(),
                         value: self.stripes.value.clone(),
                     };
                     extra_opts.push(stripes);
@@ -592,7 +585,7 @@ impl<'a> LvNewView<'a> {
                 // mirrors,
                 if self.mirrors.value.len() > 0 {
                     let mirrors = LvmExtraArg {
-                        opt: "mirrors".to_string(),
+                        opt: "--mirrors".to_string(),
                         value: self.mirrors.value.clone(),
                     };
                     extra_opts.push(mirrors);
@@ -1118,17 +1111,5 @@ impl<'a> LvNewView<'a> {
         }
 
         frame.render_stateful_widget(sel_list, sel_pv_area, sel_state);
-    }
-}
-
-//
-//  lvsize_opts: ["M", "G", "%FREE", "%VG", "T"],
-//
-fn calc_size_multi(size_opt: &String) -> u64 {
-    match size_opt.as_str() {
-        "M" => 1000 * 1000,
-        "G" => 1000 * 1000 * 1000,
-        "T" => 1000 * 1000 * 1000 * 1000,
-        _ => 1000000, // M
     }
 }

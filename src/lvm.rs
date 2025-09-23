@@ -15,6 +15,8 @@ use std::collections::HashMap;
 const VGDISPLAY_BIN: &str = "/usr/sbin/vgs";
 const PVS_BIN: &str = "/usr/sbin/pvs";
 const LVS_BIN: &str = "/usr/sbin/lvs";
+const LVCREATE_BIN: &str = "/usr/sbin/lvcreate";
+//const LVCREATE_BIN: &str = "/tmp/foo.sh";
 
 pub struct LvmExtraArg {
     pub opt: String,
@@ -400,14 +402,46 @@ pub fn get_lvs() -> Vec<LvmLvData> {
 // Create logical volumne
 //
 pub fn create_lv(
-    _lv: &String,
-    _vg: &String,
-    _size: u64,
-    _segtype: &String,
-    _pvl: &Vec<String>,
-    _extra: &Vec<LvmExtraArg>,
-) -> Result<String, &'static str> {
-    todo!("create_lv");
+    lv: &String,
+    vg: &String,
+    size: u64,
+    size_unit: &String,
+    segtype: &String,
+    pvl: &Vec<String>,
+    extra: &Vec<LvmExtraArg>,
+) -> Result<String, String> {
+    let mut args = Vec::<&str>::new();
+    // lvcreate --type raid1 -m 1 -L 10G -n lvvirt_archjol vg04_1tbdisks /dev/sdd1 /dev/sde1
+    args.push("--type");
+    args.push(segtype);
+    for e in extra {
+        args.push(&e.opt);
+        args.push(&e.value);
+    }
+    args.push("-L");
+    let size_str = format!("{}{}", size, size_unit);
+    args.push(&size_str);
+    args.push("-n");
+    args.push(lv);
+    args.push(vg);
+    let mut pvs = String::new();
+    for pvdev in pvl {
+        pvs = pvdev.to_owned() + &" ".to_string();
+    }
+    if pvs.len() > 0 {
+        args.push(pvs.trim());
+    }
+
+    match run_cmd(LVCREATE_BIN, &args) {
+        Ok(o) => {
+            if !o.status.success() {
+                let es: std::borrow::Cow<'_, str> = String::from_utf8_lossy(&o.stderr);
+                return Err(es.into_owned());
+            }
+            Ok("Created lv".to_string())
+        }
+        Err(e) => panic!("{e}"),
+    }
 }
 
 // Convinient functions
