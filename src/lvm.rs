@@ -1,6 +1,6 @@
 //
 // Functions for talking with lvm and get info about logical volumns, PV etc.
-// 
+//
 // Since it seams lib (lvmapp.h ) does not exist anymore,
 // "difficult to maintain acc to thread/mailinglist 2025",
 // remaining option seams to be either dbus or "good old" execv(lvs/lvcreate)
@@ -10,11 +10,13 @@
 // Hence 'Command' in rust dropping deps to c-libs, bindgen. Commands used are lvs, pvs and vgs.
 //
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 const VGDISPLAY_BIN: &str = "/usr/sbin/vgs";
 const PVS_BIN: &str = "/usr/sbin/pvs";
 const LVS_BIN: &str = "/usr/sbin/lvs";
+const LVCREATE_BIN: &str = "/usr/sbin/lvcreate";
+//const LVCREATE_BIN: &str = "/tmp/foo.sh";
 
 pub struct LvmExtraArg {
     pub opt: String,
@@ -218,37 +220,6 @@ fn parse_pvso(s: &std::borrow::Cow<'_, str>) -> Result<Vec<LvmPVData>, &'static 
     return res;
 }
 
-pub fn get_lvs_segs(lv_name: &String) -> Result<Vec<LvmlvSegData>, &'static str> {
-    let lv_name_arg = format! {"lvname={}", lv_name};
-    let args: [&str; 13] = [
-        "--headings",
-        "none",
-        "--separator",
-        ",",
-        "--reportformat",
-        "basic",
-        "-a",
-        "--units",
-        "B",
-        "-o",
-        "seg_le_ranges",
-        "-S",
-        lv_name_arg.as_str(),
-    ];
-
-    match run_cmd(LVS_BIN, &args) {
-        Ok(o) => {
-            let s: std::borrow::Cow<'_, str> = String::from_utf8_lossy(&o.stdout);
-            let result: Result<Vec<LvmlvSegData>, &'static str> = parse_lvsegs(&s);
-            match result {
-                Ok(lvsegs) => Ok(lvsegs),
-                Err(e) => panic!("{e}"),
-            }
-        }
-        Err(e) => panic!("{e}"),
-    }
-}
-
 pub fn get_pvs() -> Vec<LvmPVData> {
     let args: [&str; 11] = [
         "--headings",
@@ -391,56 +362,6 @@ fn parse_lvso_segs(
     Ok(v_lv_segs)
 }
 
-// Might be multiple lines per lvname.
-// LE Ranges
-//  /dev/sdf1:1-52468
-//  [lvdata_mpriv_rimage_0]:0-52467,[lvdata_mpriv_rimage_1]:0-52467,[lvdata_mpriv_rimage_2]:0-52467,[lvdata_mpriv_rimage_3]:0-52467
-//
-// LE Ranges
-//  /dev/sda1:4608-6655
-//  /dev/sda1:15104-15615
-//
-// If 'main' lv is a raid , the seg_le_ranges will be a child sub lv list, format  [lvdata_mpriv_rimage_0]:0-52467 , separated by ,
-// If lv has been extended, there might be multiple lines with identical device name.
-//
-fn parse_lvsegs(s: &std::borrow::Cow<'_, str>) -> Result<Vec<LvmlvSegData>, &'static str> {
-    // We want unique devs, so a Set.
-    let mut seg_le_devices = HashSet::<String>::new();
-
-    for line in s.lines().filter(|&line| !line.trim().is_empty()) {
-        // split by , to get /dev/sdf1:1-52468, then split by :
-        let seg_str: Vec<&str> = line.trim().split(",").collect();
-
-        for devices_str in seg_str {
-            let dev_str: Vec<&str> = devices_str.trim().split(":").collect();
-            let dev = dev_str
-                .get(0)
-                .ok_or_else(|| "failed to parse device name")?
-                .to_string();
-
-            // for now ignore extents
-            seg_le_devices.insert(dev);
-        }
-    }
-
-    let v: Vec<&String> = seg_le_devices.iter().collect();
-
-    let res: Result<Vec<LvmlvSegData>, &'static str> = v
-        .into_iter()
-        .map(|str_dev| {
-            let lvm_lv_segs: LvmlvSegData = LvmlvSegData {
-                pvdev: str_dev.clone(),
-                pv_start_pe: 0,
-                size_pe: 0,
-            };
-
-            Ok::<LvmlvSegData, &'static str>(lvm_lv_segs)
-        })
-        .collect();
-
-    return res;
-}
-
 //
 // lvs --headings none --separator ',' -a --units B -o lv_name,vg_name,size,attr,segtype,uuid,stripes,data_stripes
 //
@@ -481,14 +402,46 @@ pub fn get_lvs() -> Vec<LvmLvData> {
 // Create logical volumne
 //
 pub fn create_lv(
-    _lv: &String,
-    _vg: &String,
-    _size: u64,
-    _segtype: &String,
-    _pvl: &Vec<String>,
-    _extra: &Vec<LvmExtraArg>,
-) -> Result<String, &'static str> {
-    todo!("create_lv");
+    lv: &String,
+    vg: &String,
+    size: u64,
+    size_unit: &String,
+    segtype: &String,
+    pvl: &Vec<String>,
+    extra: &Vec<LvmExtraArg>,
+) -> Result<String, String> {
+    let mut args = Vec::<&str>::new();
+    // lvcreate --type raid1 -m 1 -L 10G -n lvvirt_archjol vg04_1tbdisks /dev/sdd1 /dev/sde1
+    args.push("--type");
+    args.push(segtype);
+    for e in extra {
+        args.push(&e.opt);
+        args.push(&e.value);
+    }
+    args.push("-L");
+    let size_str = format!("{}{}", size, size_unit);
+    args.push(&size_str);
+    args.push("-n");
+    args.push(lv);
+    args.push(vg);
+    let mut pvs = String::new();
+    for pvdev in pvl {
+        pvs = pvdev.to_owned() + &" ".to_string();
+    }
+    if pvs.len() > 0 {
+        args.push(pvs.trim());
+    }
+
+    match run_cmd(LVCREATE_BIN, &args) {
+        Ok(o) => {
+            if !o.status.success() {
+                let es: std::borrow::Cow<'_, str> = String::from_utf8_lossy(&o.stderr);
+                return Err(es.into_owned());
+            }
+            Ok("Created lv".to_string())
+        }
+        Err(e) => panic!("{e}"),
+    }
 }
 
 // Convinient functions
@@ -531,9 +484,7 @@ pub fn get_lvinfo_by_vg(vg_name: &String, lv_list: &Vec<LvmLvData>) -> Vec<LvmLv
 #[cfg(test)]
 mod tests {
 
-    use crate::lvm::{
-        LvmVgData, LvmlvSegData, parse_lvsegs, parse_lvso, parse_pvso, parse_vgdo, parse_vgso,
-    };
+    use crate::lvm::{LvmVgData, LvmlvSegData, parse_lvso, parse_pvso, parse_vgdo, parse_vgso};
 
     #[test]
     fn test_parse_vgdo() {
@@ -639,45 +590,5 @@ mod tests {
         let lvm_lvs = parse_lvso(&s).expect("error");
 
         assert_eq!(lvm_lvs.len(), 10);
-    }
-
-    // Might be multiple lines per lvname.
-    // LE Ranges
-    //  /dev/sdf1:1-52468
-    //  [lvdata_mpriv_rimage_0]:0-52467,[lvdata_mpriv_rimage_1]:0-52467,[lvdata_mpriv_rimage_2]:0-52467,[lvdata_mpriv_rimage_3]:0-52467
-    //
-    // LE Ranges
-    //  /dev/sda1:4608-6655
-    //  /dev/sda1:15104-15615
-    //
-    // If 'main' lv is a raid , the seg_le_ranges will be a child sub lv list, format  [lvdata_mpriv_rimage_0]:0-52467 , separated by ,
-    // If lv has been extended, there might be multiple lines with identical device name.
-    //
-    #[test]
-    fn test_parse_lvsegs() {
-        let s = "  /dev/sdf1:1-52468
-            [lvdata_mpriv_rimage_0]:0-52467,[lvdata_mpriv_rimage_1]:0-52467,[lvdata_mpriv_rimage_2]:0-52467,[lvdata_mpriv_rimage_3]:0-52467
-            /dev/sda1:4608-6655
-            /dev/sda1:15104-15615
-            /dev/sdb2:4608-6655";
-
-        let s: std::borrow::Cow<'_, str> = std::borrow::Cow::Borrowed(s);
-
-        let lv_segs = parse_lvsegs(&s).expect("error");
-
-        assert_eq!(have_dev(&"/dev/sdf1".to_string(), &lv_segs), true);
-
-        assert_eq!(lv_segs.len(), 7);
-    }
-
-    fn have_dev(dev: &String, vsegs: &Vec<LvmlvSegData>) -> bool {
-        for seg in vsegs {
-            println!("compare {} with {}", seg.pvdev, dev);
-            if seg.pvdev.trim().eq(dev) {
-                return true;
-            }
-        }
-
-        return false;
     }
 }
