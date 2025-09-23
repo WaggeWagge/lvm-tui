@@ -18,7 +18,7 @@ derive_setters = "0.1.8"
 
 [package.metadata.deb]
 section = "unknown"
-revision = "4"
+revision = "5"
 changelog = "debian/changelog"
 depends = "lvm2"
 
