@@ -7,10 +7,14 @@ pub mod vgview;
 
 use core::time;
 use crossterm::event::KeyEvent;
+use crossterm::style::Print;
+use crossterm::{ExecutableCommand, QueueableCommand, terminal};
 use ratatui::buffer::Buffer;
 use ratatui::widgets::Widget;
+use std::io::{self, Write};
 use std::sync::Mutex;
 use std::thread::{self};
+use std::time::Duration;
 
 use Constraint::{Length, Max, Min};
 use ratatui::style::Stylize;
@@ -37,7 +41,7 @@ use crate::{
     lvmapp::{res::Colors, vgview::VgInfoView},
 };
 
-const STATUS_RESET_INTERVAL: u64 = 30;
+const STATUS_RESET_INTERVAL: u64 = 5;
 
 struct Status {
     last_result: Option<String>,
@@ -227,7 +231,7 @@ impl LvmApp<'_> {
 
     // Handle events for the whole app. Also responsible for init of 'views'.
     pub fn run(mut self, mut terminal: DefaultTerminal) -> color_eyre::Result<()> {
-        // "clear" status bar every STATUS_RESET_INTERVALs (15).
+        // "clear" status bar every STATUS_RESET_INTERVALs.
         thread::spawn(move || {
             loop {
                 let dur = time::Duration::from_secs(STATUS_RESET_INTERVAL);
@@ -235,7 +239,16 @@ impl LvmApp<'_> {
                 STATUS
                     .lock()
                     .unwrap()
-                    .set_status(format!("Ok ({})", STATUS_RESET_INTERVAL).as_str());
+                    .set_status(format!("Ok({})", STATUS_RESET_INTERVAL).as_str());
+                // Send any event to trigger refresh.
+                //let mut stdout = io::stdout();
+
+                //match stdout.queue(Print(event::KeyCode::F(5))) {
+                //    _ => (), // Noop,
+                //};
+                //match stdout.flush() {
+                //    _ => (), // Noop
+                //}
             }
         });
 
@@ -243,16 +256,19 @@ impl LvmApp<'_> {
             terminal.draw(|frame| self.draw(frame))?;
             self.clear_flags();
 
-            if let Event::Key(key) = event::read()? {
-                match self.handle_events(&key) {
-                    Ok(true) => return color_eyre::eyre::Ok(()),
-                    Ok(false) => (), // keep going
-                    Err(_) => todo!("throw back error..."),
+            // Dont block forever, do some re-draw in between evens. Wait for at most STATUS_RESET_INTERVAL - 1.
+            if event::poll(Duration::from_secs(STATUS_RESET_INTERVAL - 1))? {
+                if let Event::Key(key) = event::read()? {
+                    match self.handle_events(&key) {
+                        Ok(true) => return color_eyre::eyre::Ok(()),
+                        Ok(false) => (), // keep going
+                        Err(_) => todo!("throw back error..."),
+                    }
                 }
-            }
 
-            if self.refresh_lvm_data {
-                self.refresh_data();
+                if self.refresh_lvm_data {
+                    self.refresh_data();
+                }
             }
         } // loop
     }
@@ -461,7 +477,7 @@ impl LvmApp<'_> {
         if self.view_type == ViewType::VgOverview {
             // Main View
             // Inner layout for tabs and table
-            let inner_layout = &Layout::vertical([Max(1), Min(15)]).margin(1);
+            let inner_layout = &Layout::vertical([Max(1), Min(15)]).margin(1).spacing(1);
             let [tab_area, table_area] = inner_layout.areas(outer_layout[0]);
             frame.render_widget(self.main_tabs.clone(), tab_area);
 
