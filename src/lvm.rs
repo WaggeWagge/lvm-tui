@@ -96,7 +96,7 @@ pub fn get_vg_info(vg_name: &String) -> LvmVgData {
 // VG,VSize,VFree,#PV,Attr,VG UUID
 // vgssd_virt,120028397568B,54530146304B,1,wz--n-,ZFcFCx-fW2F-sWq6-PVy1-8PN2-2CVt-epVMVt
 //
-fn parse_vgdo(s: &std::borrow::Cow<'_, str>) -> Result<LvmVgData, &'static str> {
+fn parse_vgdo(s: &str) -> Result<LvmVgData, &'static str> {
     let err = "failed to parse/split vgdisplay output";
 
     if s.len() < 1 {
@@ -148,20 +148,27 @@ fn parseu16(s: &str) -> Result<u16, &'static str> {
 // vgssd_virt
 // vg2
 //
-fn parse_vgso(s: &std::borrow::Cow<'_, str>) -> Result<Vec<String>, &'static str> {
+fn parse_vgso(s: &str) -> Result<Vec<LvmVgData>, &'static str> {
     if s.len() < 1 {
-        return Ok(Vec::<String>::new());
+        return Ok(Vec::<LvmVgData>::new());
     }
 
-    let v_vgs = s.lines().map(|line| line.trim().to_string()).collect();
+    let v_vgs: Result<Vec<LvmVgData>, &'static str> = s
+        .lines()
+        .filter(|&line| !line.trim().is_empty())
+        .map(|line| {
+            let vg: LvmVgData = parse_vgdo(line)?;
+            Ok(vg)
+        })
+        .collect();
 
-    return Ok(v_vgs);
+    return v_vgs;
 }
 
 //
 // Return all volumne groups found.
 //
-pub fn get_vgs() -> Vec<String> {
+pub fn get_vgs() -> Vec<LvmVgData> {
     let args: [&str; 11] = [
         "--headings",
         "none",
@@ -173,7 +180,7 @@ pub fn get_vgs() -> Vec<String> {
         "--units",
         "B",
         "-o",
-        "vg_name",
+        "vg_name,vg_size,vg_free,pv_count,vg_attr,vg_uuid",
     ];
 
     match run_cmd(VGDISPLAY_BIN, &args) {
@@ -519,15 +526,17 @@ mod tests {
 
     #[test]
     fn test_parse_vgso() {
-        let s = "  vg03_backups\n  vg04_1tbdisks\n  vgdata01\n  vgroot";
+        // vg_name,vg_size,vg_free,pv_count,vg_attr,vg_uuid"
+        let s = "    vg03_backups,120028397568B,54530146304B,1,wz--n-,ZFcFCx-fW2F-sWq6-PVy1-8PN2-2CVt-epVMVt
+            vg04_1tbdisks,120028397568B,54530146304B,1,wz--n-,ZFcFCx-fW2F-sWq6-PVy1-8PN2-2CVt-epVMVt
+            vgdata01,120028397568B,54530146304B,1,wz--n-,ZFcFCx-fW2F-sWq6-PVy1-8PN2-2CVt-epVMVt";
         let s: std::borrow::Cow<'_, str> = std::borrow::Cow::Borrowed(s);
 
         let lvm_vgs = parse_vgso(&s).expect("error");
-        assert_eq!(lvm_vgs.get(0).unwrap(), "vg03_backups");
-        assert_eq!(lvm_vgs.get(1).unwrap(), "vg04_1tbdisks");
-        assert_eq!(lvm_vgs.get(2).unwrap(), "vgdata01");
-        assert_eq!(lvm_vgs.get(3).unwrap(), "vgroot");
-        assert_eq!(lvm_vgs.len(), 4);
+        assert_eq!(lvm_vgs.get(0).unwrap().name, "vg03_backups");
+        assert_eq!(lvm_vgs.get(1).unwrap().name, "vg04_1tbdisks");
+        assert_eq!(lvm_vgs.get(2).unwrap().name, "vgdata01");       
+        assert_eq!(lvm_vgs.len(), 3);
 
         let s = "";
         let s: std::borrow::Cow<'_, str> = std::borrow::Cow::Borrowed(s);

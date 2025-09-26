@@ -379,8 +379,11 @@ impl LvmApp<'_> {
                 KeyCode::Tab => {
                     self.main_tabs.next();
                     if self.main_tabs.selected == SelTabs::LV {
-                        self.lvinfo_view = Some(lvinfo::LvInfoView::new());
-                        self.lvinfo_view.as_mut().unwrap().refresh_data();
+                        // Dont re-create unless needed.
+                        if self.lvinfo_view.is_none() {
+                            self.lvinfo_view = Some(lvinfo::LvInfoView::new());
+                            self.lvinfo_view.as_mut().unwrap().refresh_data();
+                        }
                     }
                 }
                 _ => {}
@@ -637,27 +640,27 @@ fn fetch_data(vgs: &mut Vec<VgTableData>) {
     let pv_list = lvm::get_pvs();
     let lv_list = lvm::get_lvs();
 
-    for vg_name in vg_list {
-        let pvs_in_vg: Vec<String> = lvm::find_pvs_by_vg(&vg_name, &pv_list);
+    for vg in vg_list {
+        let pvs_in_vg: Vec<String> = lvm::find_pvs_by_vg(&vg.name, &pv_list);
         let mut rows = Vec::<VgTableData>::new();
 
         for pv_name in pvs_in_vg {
             let vg_table_item: VgTableData = VgTableData {
-                vg_name: vg_name.clone(),
+                vg_name: vg.name.clone(),
                 pv_name: pv_name.clone(),
                 lv_name: String::from(""),
             };
             rows.push(vg_table_item);
         }
 
-        let lvs_in_vg: Vec<String> = lvm::find_lvs_by_vg(&vg_name, &lv_list);
+        let lvs_in_vg: Vec<String> = lvm::find_lvs_by_vg(&vg.name, &lv_list);
         for lv_name in lvs_in_vg {
             // Go though existing rows, if find space i.e. "", update row,
             // if no empty lv_names remaining, add new row.
             if rows.last().is_none() || !rows.last().unwrap().lv_name.eq("") {
                 // Add new
                 let row: VgTableData = VgTableData {
-                    vg_name: vg_name.clone(),
+                    vg_name: vg.name.clone(),
                     pv_name: String::from(""),
                     lv_name: lv_name.clone(),
                 };
@@ -676,7 +679,7 @@ fn fetch_data(vgs: &mut Vec<VgTableData>) {
         // If no match, put row with vgname only
         if rows.len() < 1 {
             let row: VgTableData = VgTableData {
-                vg_name: vg_name.clone(),
+                vg_name: vg.name.clone(),
                 pv_name: String::from(""),
                 lv_name: String::from(""),
             };

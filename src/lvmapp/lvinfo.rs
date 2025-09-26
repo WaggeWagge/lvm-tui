@@ -1,14 +1,17 @@
 use Constraint::{Length, Min};
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind};
 use ratatui::{
-    layout::{Constraint, Layout, Margin, Rect}, style::{Style, Stylize}, widgets::{
-        Block, BorderType, Borders, Gauge, Scrollbar,
-        ScrollbarOrientation, ScrollbarState, TableState,
-    }, Frame
+    Frame,
+    layout::{Constraint, Layout, Margin, Rect},
+    style::{Style, Stylize},
+    widgets::{
+        Block, BorderType, Borders, Gauge, Scrollbar, ScrollbarOrientation, ScrollbarState,
+        TableState,
+    },
 };
 
 use crate::{
-    lvm::{self, LvmLvData},
+    lvm::{self, LvmLvData, LvmVgData},
     lvmapp::{
         View, ViewType,
         res::{self, Colors},
@@ -16,10 +19,11 @@ use crate::{
 };
 
 pub struct LvInfoView {
-    state: TableState,  
-    lvs_items_rndr_start: usize, // what items to render and scrollbar 
+    state: TableState,
+    lvs_items_rndr_start: usize, // what items to render and scrollbar
     lvs_item_rndr_end: usize,    // what items to render and scrollbar
     lv_items: Option<Vec<LvmLvData>>,
+    vg_items: Option<Vec<LvmVgData>>,
     scroll_state: ScrollbarState,
     colors: Colors,
 }
@@ -28,7 +32,8 @@ const ITEM_HEIGHT: u16 = 3;
 
 impl View for LvInfoView {
     fn refresh_data(&mut self) {
-        self.lv_items = Some(lvm::get_lvs());        
+        self.lv_items = Some(lvm::get_lvs());
+        self.vg_items = Some(lvm::get_vgs());
     }
 
     fn view_type(&self) -> ViewType {
@@ -65,6 +70,7 @@ impl LvInfoView {
             scroll_state: ScrollbarState::new(15),
             colors: Colors::new(&res::PALETTES[0]),
             lv_items: None,
+            vg_items: None,
             lvs_items_rndr_start: 0,
             lvs_item_rndr_end: 0,
         }
@@ -156,6 +162,19 @@ impl LvInfoView {
 
         while item_to_rndr < v.len() {
             let lv_data = v.get(item_to_rndr).unwrap();
+            // Get relevant vg.
+            let mut vg: Option<LvmVgData> = None;
+            for vg_data in self.vg_items.as_ref().unwrap().iter() {
+                if vg_data.name.eq(&lv_data.vg_name) {
+                    vg = Some(vg_data.clone());
+                }
+            }
+
+            let mut percent: f64 = 0.0;
+            if vg.is_some() {
+                percent = (lv_data.size as f64) / (vg.as_ref().unwrap().size as f64) * 100.0;
+            }
+            let percent = percent as u16;
 
             let y = area.y + i;
             let lv_area = Rect::new(area.x, y, area.width - 3, 3);
@@ -173,8 +192,8 @@ impl LvInfoView {
                         .on_black()
                         .italic(),
                 )
-                .percent(50)
-                .label("% of vgxxxx");
+                .percent(percent)
+                .label(format!("{}% of vg:{}", percent, lv_data.vg_name));
             frame.render_widget(bar, lv_area);
 
             i += ITEM_HEIGHT;
