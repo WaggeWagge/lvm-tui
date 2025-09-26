@@ -7,11 +7,8 @@ pub mod vgview;
 
 use core::time;
 use crossterm::event::KeyEvent;
-use crossterm::style::Print;
-use crossterm::{ExecutableCommand, QueueableCommand, terminal};
 use ratatui::buffer::Buffer;
 use ratatui::widgets::Widget;
-use std::io::{self, Write};
 use std::sync::Mutex;
 use std::thread::{self};
 use std::time::Duration;

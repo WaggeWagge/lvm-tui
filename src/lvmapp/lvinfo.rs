@@ -1,7 +1,7 @@
 use Constraint::{Length, Min};
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind};
 use ratatui::{
-    layout::{Constraint, Layout, Margin, Rect}, style::{Style, Stylize}, symbols::border, widgets::{
+    layout::{Constraint, Layout, Margin, Rect}, style::{Style, Stylize}, widgets::{
         Block, BorderType, Borders, Gauge, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState, TableState
     }, Frame
 };
