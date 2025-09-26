@@ -1,13 +1,9 @@
 use Constraint::{Length, Min};
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind};
 use ratatui::{
-    Frame,
-    layout::{Constraint, Layout, Margin, Rect},
-    style::{Style, Stylize},
-    widgets::{
-        Block, BorderType, Borders, Gauge, Scrollbar, ScrollbarOrientation, ScrollbarState,
-        TableState,
-    },
+    layout::{Constraint, Layout, Margin, Rect}, style::{Style, Stylize}, symbols::border, widgets::{
+        Block, BorderType, Borders, Gauge, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState, TableState
+    }, Frame
 };
 
 use crate::{
@@ -20,6 +16,7 @@ use crate::{
 
 pub struct LvInfoView {
     state: TableState,
+    lv_selected_index: usize,
     lvs_items_rndr_start: usize, // what items to render and scrollbar
     lvs_item_rndr_end: usize,    // what items to render and scrollbar
     lv_items: Option<Vec<LvmLvData>>,
@@ -73,6 +70,7 @@ impl LvInfoView {
             vg_items: None,
             lvs_items_rndr_start: 0,
             lvs_item_rndr_end: 0,
+            lv_selected_index: 0,
         }
     }
 
@@ -89,10 +87,12 @@ impl LvInfoView {
         };
 
         self.state.select(Some(i));
+        self.lv_selected_index = i;
 
         if self.lvs_item_rndr_end < self.lv_items.as_ref().unwrap().len() {
             // we did not render all....
             self.lvs_items_rndr_start += 1;
+          
         }
         self.scroll_state = self.scroll_state.position(i * ITEM_HEIGHT as usize);
     }
@@ -109,8 +109,11 @@ impl LvInfoView {
             None => 0,
         };
 
+        self.lv_selected_index = i;
+
         if self.lvs_items_rndr_start > 0 {
             self.lvs_items_rndr_start -= 1;
+          
         }
 
         self.scroll_state = self.scroll_state.position(i * ITEM_HEIGHT as usize);
@@ -118,15 +121,18 @@ impl LvInfoView {
     }
 
     pub fn render(&mut self, frame: &mut Frame, area: &Rect) {
-        let v_outer_layout = &Layout::vertical([Min(8), Length(8)]);
+        let v_outer_layout = &Layout::vertical([ Length(1), Min(8)]);
         let [v_area0, v_area1] = v_outer_layout.areas(*area);
 
         let h_layout = Layout::horizontal([Min(20), Length(2)]).horizontal_margin(1);
 
-        let [h_area0, h_area1] = h_layout.areas(v_area0);
+        let [h_area0, _h_area1] = h_layout.areas(v_area0);
 
-        self.render_lvs_list(frame, v_area0);
-        self.render_scrollbar(frame, v_area0);
+        self.render_lvs_list(frame, v_area1);
+        self.render_scrollbar(frame, v_area1);
+
+        let p = Paragraph::new(format!("sorted by: vgname"));
+        frame.render_widget(p,h_area0);
     }
 
     fn render_scrollbar(&mut self, frame: &mut Frame, area: Rect) {
@@ -143,17 +149,20 @@ impl LvInfoView {
         );
     }
 
+    fn lv_index_is_sel(&self, index: usize) -> bool {
+        if index == self.lv_selected_index {
+            true
+        } else {
+            false
+        }
+    }
+
     fn render_lvs_list(&mut self, frame: &mut Frame, area: Rect) {
         // sort lv data,
-        //self.lv_items
-        //    .as_deref_mut()
-        //    .unwrap()
-        //    .sort_by_key(|item| (item.lv_name).clone());
-
-        let sb = Block::default()
-            .border_style(Style::new().fg(self.colors.block_border))
-            .border_type(BorderType::Rounded)
-            .borders(Borders::ALL);
+        self.lv_items
+            .as_deref_mut()
+            .unwrap()
+            .sort_by_key(|item| (item.vg_name).clone());
 
         let v = self.lv_items.as_ref().unwrap().clone();
 
@@ -176,13 +185,19 @@ impl LvInfoView {
             }
             let percent = percent as u16;
 
+            let border_style = match self.lv_index_is_sel(item_to_rndr) {
+                true => Style::new().fg(self.colors.block_border),
+                false => Style::new().fg(self.colors.header_bg),
+            };
+
             let y = area.y + i;
             let lv_area = Rect::new(area.x, y, area.width - 3, 3);
             let bar = Gauge::default()
                 .block(
                     Block::default()
-                        .border_style(Style::new().fg(self.colors.block_border))
+                        .border_style(border_style)
                         .title(lv_data.lv_name.clone())
+                        .title_style(Style::new().fg(self.colors.block_border))
                         .border_type(BorderType::Rounded)
                         .borders(Borders::ALL),
                 )

@@ -491,7 +491,7 @@ pub fn get_lvinfo_by_vg(vg_name: &String, lv_list: &Vec<LvmLvData>) -> Vec<LvmLv
 #[cfg(test)]
 mod tests {
 
-    use crate::lvm::{LvmVgData, LvmlvSegData, parse_lvso, parse_pvso, parse_vgdo, parse_vgso};
+    use crate::lvm::{LvmVgData, parse_lvso, parse_pvso, parse_vgdo, parse_vgso};
 
     #[test]
     fn test_parse_vgdo() {
@@ -535,7 +535,7 @@ mod tests {
         let lvm_vgs = parse_vgso(&s).expect("error");
         assert_eq!(lvm_vgs.get(0).unwrap().name, "vg03_backups");
         assert_eq!(lvm_vgs.get(1).unwrap().name, "vg04_1tbdisks");
-        assert_eq!(lvm_vgs.get(2).unwrap().name, "vgdata01");       
+        assert_eq!(lvm_vgs.get(2).unwrap().name, "vgdata01");
         assert_eq!(lvm_vgs.len(), 3);
 
         let s = "";
