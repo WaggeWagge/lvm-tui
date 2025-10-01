@@ -53,8 +53,7 @@ impl VgPvInfo {
 
        // let v_layout = &Layout::vertical([ Length(10)]);        
        // let [ca] = v_layout.areas(area);
-
-       
+       let mut y = area.y;
 
        for (i, vg) in v_vgs.iter().enumerate() {
             // for the rows we have available render vg items.        
@@ -67,13 +66,13 @@ impl VgPvInfo {
                        .italic(),
             );
             
-            let y = area.y + i as u16;
-            if i >= area.height.into() {
+            let n_area = Rect::new(area.x, y, area.width, 1);            
+            para.render(n_area, frame.buffer_mut());          
+
+            y += 2;
+            if y >= area.height {
                 break;
             }
-            let n_area = Rect::new(area.x, y, area.width, 1);
-            
-            para.render(n_area, frame.buffer_mut());
        }
 
     }
