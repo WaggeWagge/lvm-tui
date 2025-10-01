@@ -4,6 +4,7 @@ pub mod popup;
 pub mod res;
 pub mod statusbar;
 pub mod vgview;
+pub mod vgpvinfo;
 
 use core::time;
 use crossterm::event::KeyEvent;
@@ -33,6 +34,7 @@ use unicode_width::UnicodeWidthStr;
 use crate::lvmapp::lvinfo::LvInfoView;
 use crate::lvmapp::lvview::LvNewView;
 use crate::lvmapp::statusbar::StatusBar;
+use crate::lvmapp::vgpvinfo::VgPvInfo;
 use crate::{
     lvm::{self},
     lvmapp::{res::Colors, vgview::VgInfoView},
@@ -84,7 +86,7 @@ impl MainTabs {
     fn next(&mut self) {
         match self.selected {
             SelTabs::ALL => self.selected = SelTabs::LV,
-            SelTabs::LV => self.selected = SelTabs::ALL,
+            SelTabs::LV => self.selected = SelTabs::VG,
             SelTabs::VG => self.selected = SelTabs::ALL,
         }
     }
@@ -364,12 +366,12 @@ impl LvmApp<'_> {
                 KeyCode::Down => match self.main_tabs.selected {
                     SelTabs::ALL => self.next_row(),
                     SelTabs::LV => self.lvinfo_view.as_mut().unwrap().next_lvrow(),
-                    SelTabs::VG => todo!(),
+                    SelTabs::VG => (),
                 },
                 KeyCode::Up => match self.main_tabs.selected {
                     SelTabs::ALL => self.previous_row(),
                     SelTabs::LV => self.lvinfo_view.as_mut().unwrap().previous_lvrow(),
-                    SelTabs::VG => todo!(),
+                    SelTabs::VG => (),
                 },
                 KeyCode::Right => self.next_column(),
                 KeyCode::Left => self.previous_column(),
@@ -483,15 +485,21 @@ impl LvmApp<'_> {
 
             // Check tab selected
             match self.main_tabs.selected {
-                SelTabs::ALL | SelTabs::VG => {
+                SelTabs::ALL => {
                     self.render_table(table_block, frame, table_area);
                     self.render_scrollbar(frame, table_area);
-                }
+                },
                 SelTabs::LV => {
                     let lv_info_view = self.lvinfo_view.as_mut().unwrap();
                     frame.render_widget(table_block, table_area);
                     lv_info_view.render(frame, &table_area);
-                }
+                },
+                SelTabs::VG => {                    
+                    frame.render_widget(table_block, table_area);
+                    let mut pv_info = VgPvInfo::new(lvm::get_vgs()); 
+                    // TODO change not re-read data every time
+                    pv_info.render(frame, &table_area);
+                } 
             }
         } else if self.view_type == ViewType::VgInfo {
             // inner layout to hold vginfo
