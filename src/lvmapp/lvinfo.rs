@@ -1,9 +1,13 @@
 use Constraint::{Length, Min};
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind};
 use ratatui::{
-    layout::{Constraint, Layout, Margin, Rect}, style::{Style, Stylize}, widgets::{
-        Block, BorderType, Borders, Gauge, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState, TableState
-    }, Frame
+    Frame,
+    layout::{Constraint, Layout, Margin, Rect},
+    style::{Style, Stylize},
+    widgets::{
+        Block, BorderType, Borders, Gauge, Paragraph, Scrollbar, ScrollbarOrientation,
+        ScrollbarState, TableState,
+    },
 };
 
 use crate::{
@@ -92,7 +96,6 @@ impl LvInfoView {
         if self.lvs_item_rndr_end < self.lv_items.as_ref().unwrap().len() {
             // we did not render all....
             self.lvs_items_rndr_start += 1;
-          
         }
         self.scroll_state = self.scroll_state.position(i * ITEM_HEIGHT as usize);
     }
@@ -113,7 +116,6 @@ impl LvInfoView {
 
         if self.lvs_items_rndr_start > 0 {
             self.lvs_items_rndr_start -= 1;
-          
         }
 
         self.scroll_state = self.scroll_state.position(i * ITEM_HEIGHT as usize);
@@ -121,7 +123,7 @@ impl LvInfoView {
     }
 
     pub fn render(&mut self, frame: &mut Frame, area: &Rect) {
-        let v_outer_layout = &Layout::vertical([ Length(1), Min(8)]);
+        let v_outer_layout = &Layout::vertical([Length(1), Min(8)]);
         let [v_area0, v_area1] = v_outer_layout.areas(*area);
 
         let h_layout = Layout::horizontal([Min(20), Length(2)]).horizontal_margin(1);
@@ -132,7 +134,7 @@ impl LvInfoView {
         self.render_scrollbar(frame, v_area1);
 
         let p = Paragraph::new(format!("sorted by: vgname"));
-        frame.render_widget(p,h_area0);
+        frame.render_widget(p, h_area0);
     }
 
     fn render_scrollbar(&mut self, frame: &mut Frame, area: Rect) {

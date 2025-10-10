@@ -3,8 +3,8 @@ pub mod lvview;
 pub mod popup;
 pub mod res;
 pub mod statusbar;
-pub mod vgview;
 pub mod vgpvinfo;
+pub mod vgview;
 
 use core::time;
 use crossterm::event::KeyEvent;
@@ -488,18 +488,18 @@ impl LvmApp<'_> {
                 SelTabs::ALL => {
                     self.render_table(table_block, frame, table_area);
                     self.render_scrollbar(frame, table_area);
-                },
+                }
                 SelTabs::LV => {
                     let lv_info_view = self.lvinfo_view.as_mut().unwrap();
                     frame.render_widget(table_block, table_area);
                     lv_info_view.render(frame, &table_area);
-                },
-                SelTabs::VG => {                    
+                }
+                SelTabs::VG => {
                     frame.render_widget(table_block, table_area);
-                    let mut pv_info = VgPvInfo::new(lvm::get_vgs()); 
+                    let mut pv_info = VgPvInfo::new(lvm::get_vgs());
                     // TODO change not re-read data every time
                     pv_info.render(frame, &table_area);
-                } 
+                }
             }
         } else if self.view_type == ViewType::VgInfo {
             // inner layout to hold vginfo
